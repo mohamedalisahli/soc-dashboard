@@ -1,19 +1,24 @@
-import { useEffect } from "react";
+import { useState } from "react";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Admin from "./pages/Admin";
 
 function App() {
-  useEffect(() => {
-    console.log("App loaded");
-    fetch("http://localhost:5000/api/health")
-      .then(res => res.json())
-      .then(data => console.log(data))
-      .catch(err => console.error(err));
-  }, []);
+  const token = localStorage.getItem("token");
+  const role = localStorage.getItem("role");
 
-  return (
-    <div>
-      <h1>SOC Dashboard</h1>
-    </div>
-  );
+  const [loggedIn, setLoggedIn] = useState(!!token);
+  const [userRole, setUserRole] = useState(role || "");
+
+  const handleLogin = (role) => {
+    setLoggedIn(true);
+    setUserRole(role);
+    localStorage.setItem("role", role);
+  };
+
+  if (!loggedIn) return <Login onLogin={handleLogin} />;
+  if (userRole === "admin") return <Admin />;
+  return <Dashboard />;
 }
 
 export default App;
