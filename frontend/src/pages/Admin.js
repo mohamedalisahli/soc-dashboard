@@ -1,6 +1,85 @@
 import { useEffect, useState } from "react";
 import API from "../services/api";
 
+const styles = {
+  navbar: {
+    background: "#1a1a2e",
+    padding: "0 30px",
+    height: "60px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.3)"
+  },
+  brand: {
+    color: "white",
+    fontSize: "20px",
+    fontWeight: "bold",
+    letterSpacing: "2px"
+  },
+  page: {
+    minHeight: "100vh",
+    background: "#f4f6f9",
+    fontFamily: "Arial, sans-serif"
+  },
+  container: { padding: "25px" },
+  card: {
+    background: "white",
+    borderRadius: "10px",
+    padding: "20px",
+    boxShadow: "0 4px 15px rgba(0,0,0,0.08)",
+    marginBottom: "20px"
+  },
+  cardTitle: {
+    color: "#1a1a2e",
+    fontWeight: "bold",
+    fontSize: "16px",
+    marginBottom: "15px",
+    borderBottom: "2px solid #C8102E",
+    paddingBottom: "8px"
+  },
+  table: { width: "100%", borderCollapse: "collapse" },
+  th: {
+    background: "#1a1a2e",
+    color: "white",
+    padding: "12px 15px",
+    textAlign: "left",
+    fontSize: "13px"
+  },
+  td: {
+    padding: "12px 15px",
+    borderBottom: "1px solid #f0f0f0",
+    fontSize: "14px",
+    color: "#333"
+  },
+  badge: (bg) => ({
+    background: bg,
+    color: "white",
+    padding: "4px 10px",
+    borderRadius: "20px",
+    fontSize: "12px",
+    fontWeight: "bold"
+  }),
+  input: {
+    padding: "8px 12px",
+    border: "2px solid #e0e0e0",
+    borderRadius: "6px",
+    width: "80px",
+    fontSize: "14px",
+    outline: "none"
+  },
+  btnModify: {
+    background: "#C8102E",
+    color: "white",
+    border: "none",
+    padding: "8px 16px",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontWeight: "bold",
+    fontSize: "13px"
+  }
+};
+
 function Admin() {
   const [rules, setRules] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
@@ -13,58 +92,72 @@ function Admin() {
 
   const handleUpdateRule = async (id, max_hours) => {
     await API.put(`/rules/${id}`, { max_hours: parseFloat(max_hours) });
-    setMsg("Règle mise à jour ✅");
+    setMsg("✅ Règle mise à jour avec succès !");
+    setTimeout(() => setMsg(""), 3000);
   };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("role");
     window.location.reload();
   };
 
   return (
-    <div className="bg-dark min-vh-100 text-white">
+    <div style={styles.page}>
 
       {/* Navbar */}
-      <nav className="navbar navbar-dark bg-danger px-4">
-        <span className="navbar-brand fw-bold fs-4">🔐 Admin Panel — SOC Dashboard</span>
-        <button className="btn btn-outline-light btn-sm" onClick={handleLogout}>
+      <nav style={styles.navbar}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+  <img src="/vermeg_logo2.png" alt="Vermeg" style={{ height: "70px" }} />
+  <span style={styles.brand}>ADMIN PANEL</span>
+</div>
+        <button
+          onClick={handleLogout}
+          style={{ background: "#C8102E", color: "white", border: "none", padding: "8px 18px", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
+        >
           Déconnexion
         </button>
       </nav>
 
-      <div className="container-fluid p-4">
+      <div style={styles.container}>
 
-        {msg && <div className="alert alert-success">{msg}</div>}
+        {/* Alert */}
+        {msg && (
+          <div style={{ padding: "12px 20px", background: "#f0fff4", border: "1px solid #28a745", borderRadius: "8px", color: "#28a745", marginBottom: "20px", fontWeight: "bold" }}>
+            {msg}
+          </div>
+        )}
 
         {/* Rules Table */}
-        <div className="card bg-secondary p-3 mb-4">
-          <h5 className="text-white mb-3">⚙️ Règles Métier (Max Heures par Client)</h5>
-          <table className="table table-dark table-striped table-hover">
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>⚙️ Règles Métier — Max Heures par Client</div>
+          <table style={styles.table}>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Client</th>
-                <th>Max Heures</th>
-                <th>Action</th>
+                <th style={styles.th}>ID</th>
+                <th style={styles.th}>Client</th>
+                <th style={styles.th}>Max Heures</th>
+                <th style={styles.th}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {rules.map(rule => (
-                <tr key={rule.id}>
-                  <td>{rule.id}</td>
-                  <td><span className="badge bg-info">{rule.client_name}</span></td>
-                  <td>
+              {rules.map((rule, i) => (
+                <tr key={rule.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
+                  <td style={styles.td}>{rule.id}</td>
+                  <td style={styles.td}>
+                    <span style={styles.badge("#1a1a2e")}>{rule.client_name}</span>
+                  </td>
+                  <td style={styles.td}>
                     <input
                       type="number"
-                      className="form-control form-control-sm bg-dark text-white"
+                      style={styles.input}
                       defaultValue={rule.max_hours}
                       id={`rule-${rule.id}`}
-                      style={{ width: "100px" }}
                     />
                   </td>
-                  <td>
+                  <td style={styles.td}>
                     <button
-                      className="btn btn-warning btn-sm"
+                      style={styles.btnModify}
                       onClick={() => {
                         const val = document.getElementById(`rule-${rule.id}`).value;
                         handleUpdateRule(rule.id, val);
@@ -80,26 +173,34 @@ function Admin() {
         </div>
 
         {/* Time Entries Table */}
-        <div className="card bg-secondary p-3">
-          <h5 className="text-white mb-3">🕐 Toutes les Entrées de Temps</h5>
-          <table className="table table-dark table-striped table-hover">
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>🕐 Toutes les Entrées de Temps</div>
+          <table style={styles.table}>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>User ID</th>
-                <th>Client ID</th>
-                <th>Heures</th>
-                <th>Date</th>
+                <th style={styles.th}>ID</th>
+                <th style={styles.th}>User ID</th>
+                <th style={styles.th}>Client ID</th>
+                <th style={styles.th}>Heures</th>
+                <th style={styles.th}>Date</th>
+                <th style={styles.th}>Commentaire</th>
               </tr>
             </thead>
             <tbody>
-              {timeEntries.map(entry => (
-                <tr key={entry.id}>
-                  <td>{entry.id}</td>
-                  <td>{entry.user_id}</td>
-                  <td>{entry.client_id}</td>
-                  <td><span className="badge bg-success">{entry.hours_logged}h</span></td>
-                  <td>{entry.date}</td>
+              {timeEntries.map((entry, i) => (
+                <tr key={entry.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
+                  <td style={styles.td}>{entry.id}</td>
+                  <td style={styles.td}>{entry.user_id}</td>
+                  <td style={styles.td}>{entry.client_id}</td>
+                  <td style={styles.td}>
+                    <span style={styles.badge("#28a745")}>{entry.hours_logged}h</span>
+                  </td>
+                  <td style={styles.td}>{entry.date}</td>
+                  <td style={styles.td}>
+                    <span style={{ fontSize: "12px", color: "#666" }}>
+                      {entry.chronos_entry_id || "—"}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

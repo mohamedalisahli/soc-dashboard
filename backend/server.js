@@ -7,6 +7,7 @@ const connection = require("./config/database");
 const { verifyToken } = require("./middleware/authMiddleware");
 const { syncToChronos } = require("./controllers/chronosController");
 const { getTicketsByUser } = require("./services/jiraService");
+const { smartSync } = require("./services/schedulerService");
 
 const app = express();
 app.use(cors());
@@ -60,6 +61,20 @@ app.get("/api/tickets", verifyToken, (req, res) => {
 
 app.post("/api/sync", verifyToken, syncToChronos);
 
+// Smart Sync — Algorithme d'équilibrage intelligent
+app.post("/api/smart-sync", verifyToken, async (req, res) => {
+  try {
+    const tickets = getTicketsByUser(req.user.username);
+    connection.query("SELECT * FROM rules", async (err, rules) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const result = await smartSync(req.user.id, tickets, rules);
+      res.json(result);
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/time-entries", verifyToken, (req, res) => {
   connection.query(
     "SELECT * FROM time_entries WHERE user_id = ?",
@@ -98,6 +113,14 @@ app.get("/api/admin/time-entries", verifyToken, (req, res) => {
     return res.status(403).json({ error: "Access denied" });
   }
   connection.query("SELECT * FROM time_entries", (err, result) => {
+    if (err) return res.status(500).send(err);
+    res.json(result);
+  });
+});
+
+// Skipped tickets — tickets ignorés par l'algorithme
+app.get("/api/skipped-tickets", verifyToken, (req, res) => {
+  connection.query("SELECT * FROM skipped_tickets", (err, result) => {
     if (err) return res.status(500).send(err);
     res.json(result);
   });
