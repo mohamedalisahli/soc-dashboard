@@ -6,7 +6,7 @@ const cron = require("node-cron");
 const connection = require("./config/database");
 const { verifyToken } = require("./middleware/authMiddleware");
 const { syncToChronos } = require("./controllers/chronosController");
-const { getTicketsByUser } = require("./services/jiraService");
+const { getTicketsByUser, getSaasTickets, getOnPremTickets } = require("./services/jiraService");
 const { smartSync } = require("./services/schedulerService");
 
 const app = express();
@@ -33,7 +33,6 @@ app.post("/api/login", (req, res) => {
       console.error("DB error:", err);
       return res.status(500).json({ error: "Server error" });
     }
-    console.log("Admin query result:", result);
     if (result.length === 0) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
@@ -54,14 +53,27 @@ app.get("/api/users", (req, res) => {
   });
 });
 
+// Tous les tickets (SaaS + On-Prem)
 app.get("/api/tickets", verifyToken, (req, res) => {
   const tickets = getTicketsByUser(req.user.username);
   res.json(tickets);
 });
 
+// Tickets SaaS uniquement
+app.get("/api/tickets/saas", verifyToken, (req, res) => {
+  const tickets = getSaasTickets(req.user.username);
+  res.json(tickets);
+});
+
+// Tickets On-Prem uniquement
+app.get("/api/tickets/onprem", verifyToken, (req, res) => {
+  const tickets = getOnPremTickets(req.user.username);
+  res.json(tickets);
+});
+
 app.post("/api/sync", verifyToken, syncToChronos);
 
-// Smart Sync — Algorithme d'équilibrage intelligent
+// Smart Sync — Algorithme d'équilibrage intelligent (SaaS + On-Prem)
 app.post("/api/smart-sync", verifyToken, async (req, res) => {
   try {
     const tickets = getTicketsByUser(req.user.username);
@@ -75,9 +87,67 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
   }
 });
 
+// Time entries — tous
 app.get("/api/time-entries", verifyToken, (req, res) => {
   connection.query(
     "SELECT * FROM time_entries WHERE user_id = ?",
+    [req.user.id],
+    (err, result) => {
+      if (err) return res.status(500).send(err);
+      res.json(result);
+    }
+  );
+});
+
+// Time entries SaaS uniquement
+app.get("/api/time-entries/saas", verifyToken, (req, res) => {
+  connection.query(
+    "SELECT * FROM time_entries WHERE user_id = ? AND (ticket_type = 'SAAS' OR ticket_type IS NULL)",
+    [req.user.id],
+    (err, result) => {
+      if (err) return res.status(500).send(err);
+      res.json(result);
+    }
+  );
+});
+
+// Time entries On-Prem uniquement
+app.get("/api/time-entries/onprem", verifyToken, (req, res) => {
+  connection.query(
+    "SELECT * FROM time_entries WHERE user_id = ? AND ticket_type = 'ONPREM'",
+    [req.user.id],
+    (err, result) => {
+      if (err) return res.status(500).send(err);
+      res.json(result);
+    }
+  );
+});
+
+// Stats par groupe On-Prem
+app.get("/api/stats/onprem", verifyToken, (req, res) => {
+  connection.query(
+    `SELECT group_name, COUNT(*) as count, SUM(hours_logged) as total_hours 
+     FROM time_entries 
+     WHERE user_id = ? AND ticket_type = 'ONPREM' AND group_name IS NOT NULL
+     GROUP BY group_name`,
+    [req.user.id],
+    (err, result) => {
+      if (err) return res.status(500).send(err);
+      res.json(result);
+    }
+  );
+});
+
+// Stats SaaS vs On-Prem
+app.get("/api/stats/comparison", verifyToken, (req, res) => {
+  connection.query(
+    `SELECT 
+      ticket_type,
+      COUNT(*) as count,
+      SUM(hours_logged) as total_hours
+     FROM time_entries 
+     WHERE user_id = ?
+     GROUP BY ticket_type`,
     [req.user.id],
     (err, result) => {
       if (err) return res.status(500).send(err);
@@ -118,7 +188,6 @@ app.get("/api/admin/time-entries", verifyToken, (req, res) => {
   });
 });
 
-// Skipped tickets — tickets ignorés par l'algorithme
 app.get("/api/skipped-tickets", verifyToken, (req, res) => {
   connection.query("SELECT * FROM skipped_tickets", (err, result) => {
     if (err) return res.status(500).send(err);
