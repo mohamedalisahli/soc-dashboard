@@ -7,6 +7,7 @@ import {
 
 const COLORS = ["#C8102E", "#1a1a2e", "#0f3460", "#e94560", "#16213e", "#28a745", "#ff9800"];
 const ONPREM_COLORS = ["#0f3460", "#1a1a2e", "#e94560", "#16213e", "#C8102E"];
+const AI_API = "http://localhost:5001";
 
 const styles = {
   navbar: {
@@ -29,11 +30,10 @@ const styles = {
     color: "#1a1a2e", fontWeight: "bold", fontSize: "16px", marginBottom: "15px",
     borderBottom: "2px solid #C8102E", paddingBottom: "8px"
   },
-  btn: (bg, active) => ({
-    background: bg, color: "white", border: active ? "3px solid white" : "none",
+  btn: (bg) => ({
+    background: bg, color: "white", border: "none",
     padding: "10px 24px", borderRadius: "8px", fontWeight: "bold", cursor: "pointer",
-    fontSize: "14px", margin: "0 6px", opacity: active ? 1 : 0.8,
-    boxShadow: active ? "0 0 0 2px " + bg : "none"
+    fontSize: "14px", margin: "0 6px"
   }),
   tabBtn: (active) => ({
     padding: "10px 24px", borderRadius: "8px 8px 0 0", fontWeight: "bold",
@@ -97,6 +97,12 @@ function Dashboard() {
   const [filterGroup, setFilterGroup] = useState("ALL");
   const [filterClient, setFilterClient] = useState("ALL");
 
+  // IA States
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiPredictions, setAiPredictions] = useState(null);
+  const [aiAnomalies, setAiAnomalies] = useState(null);
+  const [aiError, setAiError] = useState("");
+
   useEffect(() => {
     API.get("/tickets").then(res => setTickets(res.data));
     API.get("/time-entries").then(res => setTimeEntries(res.data));
@@ -118,13 +124,38 @@ function Dashboard() {
     setLoading(false);
   };
 
+  const handlePredictWorkload = async () => {
+    setAiLoading(true);
+    setAiError("");
+    try {
+      const res = await fetch(`${AI_API}/ai/predict-workload`);
+      const data = await res.json();
+      setAiPredictions(data);
+    } catch (err) {
+      setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !");
+    }
+    setAiLoading(false);
+  };
+
+  const handleDetectAnomalies = async () => {
+    setAiLoading(true);
+    setAiError("");
+    try {
+      const res = await fetch(`${AI_API}/ai/detect-anomalies`);
+      const data = await res.json();
+      setAiAnomalies(data);
+    } catch (err) {
+      setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !");
+    }
+    setAiLoading(false);
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
     window.location.reload();
   };
 
-  // Données filtrées
   const saasTickets = tickets.filter(t => t.type === "SAAS");
   const onPremTickets = tickets.filter(t => t.type === "ONPREM");
 
@@ -135,10 +166,8 @@ function Dashboard() {
     return true;
   });
 
-  // Stats globales
   const totalHeures = timeEntries.reduce((acc, e) => acc + parseFloat(e.hours_logged || 0), 0);
 
-  // Stats SaaS
   const byClient = saasTickets.reduce((acc, t) => {
     acc[t.client] = (acc[t.client] || 0) + 1;
     return acc;
@@ -146,7 +175,6 @@ function Dashboard() {
   const saasChartData = Object.entries(byClient).map(([client, count]) => ({ client, tickets: count, heures: count * 0.25 }));
   const saasPieData = Object.entries(byClient).map(([client, count]) => ({ name: client, value: count }));
 
-  // Stats On-Prem
   const byGroup = onPremTickets.reduce((acc, t) => {
     acc[t.group_name] = (acc[t.group_name] || 0) + 1;
     return acc;
@@ -154,13 +182,11 @@ function Dashboard() {
   const onPremChartData = Object.entries(byGroup).map(([group, count]) => ({ group, tickets: count, heures: count * 0.25 }));
   const onPremPieData = Object.entries(byGroup).map(([group, count]) => ({ name: group, value: count }));
 
-  // SaaS vs On-Prem comparison
   const comparisonData = [
     { name: "SaaS", tickets: saasTickets.length, heures: saasTickets.length * 0.25 },
     { name: "On-Prem", tickets: onPremTickets.length, heures: onPremTickets.length * 0.25 }
   ];
 
-  // Line chart
   const byDate = timeEntries.reduce((acc, e) => {
     const d = e.date ? e.date.toString().slice(0, 10) : "N/A";
     acc[d] = (acc[d] || 0) + parseFloat(e.hours_logged || 0);
@@ -168,9 +194,19 @@ function Dashboard() {
   }, {});
   const lineData = Object.entries(byDate).map(([date, heures]) => ({ date, heures }));
 
+  const predChartData = aiPredictions ? aiPredictions.predictions.slice(0, 10).map(p => ({
+    client: p.client, tickets: p.predicted_tickets, heures: p.predicted_hours
+  })) : [];
+
+  const anomalyChartData = aiAnomalies ? Object.entries(
+    aiAnomalies.anomalies.reduce((acc, a) => {
+      acc[a.client] = (acc[a.client] || 0) + 1;
+      return acc;
+    }, {})
+  ).map(([client, count]) => ({ client, anomalies: count })) : [];
+
   return (
     <div style={styles.page}>
-      {/* Navbar */}
       <nav style={styles.navbar}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <img src="/Vermeg_logo.png" alt="Vermeg" style={{ height: "45px" }} />
@@ -184,7 +220,7 @@ function Dashboard() {
 
       <div style={styles.container}>
 
-        {/* KPI Cards Globales */}
+        {/* KPI Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "15px", marginBottom: "25px" }}>
           <div style={styles.kpiCard("#C8102E")}>
             <div style={{ fontSize: "12px", opacity: 0.9, marginBottom: "8px" }}>TOTAL TICKETS</div>
@@ -210,16 +246,16 @@ function Dashboard() {
 
         {/* Tabs */}
         <div style={{ marginBottom: "0", borderBottom: "2px solid #e0e0e0" }}>
-          {["global", "saas", "onprem"].map(tab => (
+          {["global", "saas", "onprem", "ai"].map(tab => (
             <button key={tab} style={styles.tabBtn(activeTab === tab)} onClick={() => setActiveTab(tab)}>
-              {tab === "global" ? "🌐 Vue Globale" : tab === "saas" ? "☁️ Vue SaaS" : "🖥️ Vue On-Prem"}
+              {tab === "global" ? "🌐 Vue Globale" : tab === "saas" ? "☁️ Vue SaaS" : tab === "onprem" ? "🖥️ Vue On-Prem" : "🤖 IA & Analytics"}
             </button>
           ))}
         </div>
 
         <div style={{ background: "white", borderRadius: "0 10px 10px 10px", padding: "20px", marginBottom: "20px", boxShadow: "0 4px 15px rgba(0,0,0,0.08)" }}>
 
-          {/* ===== VUE GLOBALE ===== */}
+          {/* VUE GLOBALE */}
           {activeTab === "global" && (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
@@ -230,8 +266,7 @@ function Dashboard() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="name" stroke="#666" />
                       <YAxis stroke="#666" />
-                      <Tooltip />
-                      <Legend />
+                      <Tooltip /><Legend />
                       <Bar dataKey="tickets" fill="#C8102E" radius={[4,4,0,0]} name="Tickets" />
                       <Bar dataKey="heures" fill="#1a1a2e" radius={[4,4,0,0]} name="Heures" />
                     </BarChart>
@@ -243,29 +278,26 @@ function Dashboard() {
                     <PieChart>
                       <Pie data={comparisonData} dataKey="tickets" nameKey="name" cx="50%" cy="50%" outerRadius={90}
                         label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                        <Cell fill="#C8102E" />
-                        <Cell fill="#0f3460" />
+                        <Cell fill="#C8102E" /><Cell fill="#0f3460" />
                       </Pie>
                       <Tooltip />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               </div>
-
               <div style={styles.cardTitle}>📈 Évolution des Heures Chronos</div>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={lineData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="date" stroke="#666" fontSize={12} />
-                  <YAxis stroke="#666" />
-                  <Tooltip />
+                  <YAxis stroke="#666" /><Tooltip />
                   <Line type="monotone" dataKey="heures" stroke="#C8102E" strokeWidth={2} dot={{ fill: "#C8102E" }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           )}
 
-          {/* ===== VUE SAAS ===== */}
+          {/* VUE SAAS */}
           {activeTab === "saas" && (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
@@ -274,10 +306,8 @@ function Dashboard() {
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart data={saasChartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="client" stroke="#666" />
-                      <YAxis stroke="#666" />
-                      <Tooltip />
-                      <Legend />
+                      <XAxis dataKey="client" stroke="#666" /><YAxis stroke="#666" />
+                      <Tooltip /><Legend />
                       <Bar dataKey="tickets" fill="#C8102E" radius={[4,4,0,0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -295,7 +325,6 @@ function Dashboard() {
                   </ResponsiveContainer>
                 </div>
               </div>
-
               <div style={styles.cardTitle}>🎯 Heures utilisées vs Max autorisées</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "10px", marginBottom: "20px" }}>
                 {RULES.map(rule => {
@@ -305,18 +334,9 @@ function Dashboard() {
                   return <Gauge key={rule.client} value={used.toFixed(2)} max={rule.max} label={rule.client} />;
                 })}
               </div>
-
               <div style={styles.cardTitle}>🎫 Tickets SaaS</div>
               <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>ID</th>
-                    <th style={styles.th}>Titre</th>
-                    <th style={styles.th}>Client</th>
-                    <th style={styles.th}>Type</th>
-                    <th style={styles.th}>Temps</th>
-                  </tr>
-                </thead>
+                <thead><tr><th style={styles.th}>ID</th><th style={styles.th}>Titre</th><th style={styles.th}>Client</th><th style={styles.th}>Type</th><th style={styles.th}>Temps</th></tr></thead>
                 <tbody>
                   {saasTickets.map((t, i) => (
                     <tr key={t.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
@@ -332,7 +352,7 @@ function Dashboard() {
             </div>
           )}
 
-          {/* ===== VUE ON-PREM ===== */}
+          {/* VUE ON-PREM */}
           {activeTab === "onprem" && (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
@@ -341,10 +361,8 @@ function Dashboard() {
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart data={onPremChartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="group" stroke="#666" />
-                      <YAxis stroke="#666" />
-                      <Tooltip />
-                      <Legend />
+                      <XAxis dataKey="group" stroke="#666" /><YAxis stroke="#666" />
+                      <Tooltip /><Legend />
                       <Bar dataKey="tickets" fill="#0f3460" radius={[4,4,0,0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -362,18 +380,9 @@ function Dashboard() {
                   </ResponsiveContainer>
                 </div>
               </div>
-
               <div style={styles.cardTitle}>🎫 Tickets On-Prem</div>
               <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>ID</th>
-                    <th style={styles.th}>Titre</th>
-                    <th style={styles.th}>Groupe</th>
-                    <th style={styles.th}>Type</th>
-                    <th style={styles.th}>Temps</th>
-                  </tr>
-                </thead>
+                <thead><tr><th style={styles.th}>ID</th><th style={styles.th}>Titre</th><th style={styles.th}>Groupe</th><th style={styles.th}>Type</th><th style={styles.th}>Temps</th></tr></thead>
                 <tbody>
                   {onPremTickets.map((t, i) => (
                     <tr key={t.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
@@ -386,6 +395,155 @@ function Dashboard() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* VUE IA */}
+          {activeTab === "ai" && (
+            <div>
+              {/* Header IA */}
+              <div style={{ background: "linear-gradient(135deg, #1a1a2e, #0f3460)", borderRadius: "10px", padding: "20px", marginBottom: "20px", color: "white", textAlign: "center" }}>
+                <div style={{ fontSize: "28px", marginBottom: "8px" }}>🤖</div>
+                <div style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "6px" }}>Composante IA — SOC Dashboard</div>
+                <div style={{ fontSize: "13px", opacity: 0.8 }}>Prédiction de charge de travail & Détection d'anomalies</div>
+                <div style={{ fontSize: "11px", opacity: 0.6, marginTop: "6px" }}>Powered by Random Forest & Isolation Forest (scikit-learn)</div>
+              </div>
+
+              {aiError && (
+                <div style={{ padding: "12px 20px", background: "#fff3cd", border: "1px solid #ff9800", borderRadius: "8px", color: "#856404", marginBottom: "20px", fontWeight: "bold" }}>
+                  {aiError}
+                </div>
+              )}
+
+              {/* Boutons IA */}
+              <div style={{ display: "flex", gap: "15px", marginBottom: "25px", justifyContent: "center" }}>
+                <button onClick={handlePredictWorkload} disabled={aiLoading}
+                  style={{ ...styles.btn("#C8102E"), padding: "14px 30px", fontSize: "15px" }}>
+                  {aiLoading ? "⏳ Analyse..." : "📊 Prédire la Charge"}
+                </button>
+                <button onClick={handleDetectAnomalies} disabled={aiLoading}
+                  style={{ ...styles.btn("#0f3460"), padding: "14px 30px", fontSize: "15px" }}>
+                  {aiLoading ? "⏳ Analyse..." : "🚨 Détecter Anomalies"}
+                </button>
+              </div>
+
+              {/* Résultats Prédictions */}
+              {aiPredictions && (
+                <div style={{ marginBottom: "25px" }}>
+                  <div style={styles.cardTitle}>📊 Prédiction de Charge — Semaine Prochaine</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", marginBottom: "20px" }}>
+                    <div style={styles.kpiCard("#C8102E")}>
+                      <div style={{ fontSize: "12px", opacity: 0.9 }}>TICKETS PRÉVUS</div>
+                      <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiPredictions.total_tickets}</div>
+                    </div>
+                    <div style={styles.kpiCard("#1a1a2e")}>
+                      <div style={{ fontSize: "12px", opacity: 0.9 }}>HEURES PRÉVUES</div>
+                      <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiPredictions.total_hours}h</div>
+                    </div>
+                  </div>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={predChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="client" stroke="#666" /><YAxis stroke="#666" />
+                      <Tooltip /><Legend />
+                      <Bar dataKey="tickets" fill="#C8102E" radius={[4,4,0,0]} name="Tickets prévus" />
+                      <Bar dataKey="heures" fill="#0f3460" radius={[4,4,0,0]} name="Heures prévues" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div style={{ marginTop: "15px" }}>
+                    <table style={styles.table}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Client</th>
+                          <th style={styles.th}>Tickets Prévus</th>
+                          <th style={styles.th}>Heures Prévues</th>
+                          <th style={styles.th}>Charge</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiPredictions.predictions.map((p, i) => {
+                          const maxT = Math.max(...aiPredictions.predictions.map(x => x.predicted_tickets));
+                          const percent = Math.round((p.predicted_tickets / maxT) * 100);
+                          const color = percent > 70 ? "#C8102E" : percent > 40 ? "#ff9800" : "#28a745";
+                          return (
+                            <tr key={p.client} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
+                              <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{p.client}</span></td>
+                              <td style={styles.td}><strong>{p.predicted_tickets}</strong></td>
+                              <td style={styles.td}><span style={styles.badge("#0f3460")}>{p.predicted_hours}h</span></td>
+                              <td style={styles.td}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <div style={{ flex: 1, height: "8px", background: "#f0f0f0", borderRadius: "4px" }}>
+                                    <div style={{ width: `${percent}%`, height: "8px", background: color, borderRadius: "4px", transition: "width 0.5s" }} />
+                                  </div>
+                                  <span style={{ fontSize: "12px", color, fontWeight: "bold" }}>{percent}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Résultats Anomalies */}
+              {aiAnomalies && (
+                <div>
+                  <div style={styles.cardTitle}>🚨 Détection d'Anomalies</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", marginBottom: "20px" }}>
+                    <div style={styles.kpiCard("#1a1a2e")}>
+                      <div style={{ fontSize: "12px", opacity: 0.9 }}>JOURS ANALYSÉS</div>
+                      <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiAnomalies.total_analyzed}</div>
+                    </div>
+                    <div style={styles.kpiCard("#C8102E")}>
+                      <div style={{ fontSize: "12px", opacity: 0.9 }}>ANOMALIES DÉTECTÉES</div>
+                      <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiAnomalies.anomalies_count}</div>
+                    </div>
+                  </div>
+                  {anomalyChartData.length > 0 && (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={anomalyChartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="client" stroke="#666" /><YAxis stroke="#666" /><Tooltip />
+                        <Bar dataKey="anomalies" fill="#C8102E" radius={[4,4,0,0]} name="Anomalies" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                  <div style={{ marginTop: "15px", maxHeight: "300px", overflowY: "auto" }}>
+                    <table style={styles.table}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Date</th>
+                          <th style={styles.th}>Client</th>
+                          <th style={styles.th}>Tickets</th>
+                          <th style={styles.th}>Heures</th>
+                          <th style={styles.th}>Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiAnomalies.anomalies.map((a, i) => (
+                          <tr key={i} style={{ background: i % 2 === 0 ? "#fff5f5" : "#fff0f0" }}>
+                            <td style={styles.td}>{a.date}</td>
+                            <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{a.client}</span></td>
+                            <td style={styles.td}><strong style={{ color: "#C8102E" }}>{a.ticket_count}</strong></td>
+                            <td style={styles.td}>{a.total_hours}h</td>
+                            <td style={styles.td}><span style={styles.badge("#C8102E")}>⚠️ Anomalie</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {!aiPredictions && !aiAnomalies && !aiError && (
+                <div style={{ textAlign: "center", padding: "40px", color: "#999" }}>
+                  <div style={{ fontSize: "48px", marginBottom: "15px" }}>🤖</div>
+                  <div style={{ fontSize: "16px", marginBottom: "8px" }}>Clique sur un bouton pour lancer l'analyse IA</div>
+                  <div style={{ fontSize: "13px" }}>Assure-toi que le notebook Jupyter est en cours d'exécution</div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -415,11 +573,8 @@ function Dashboard() {
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>ID</th>
-                <th style={styles.th}>Titre</th>
-                <th style={styles.th}>Type</th>
-                <th style={styles.th}>Client / Groupe</th>
-                <th style={styles.th}>Temps</th>
+                <th style={styles.th}>ID</th><th style={styles.th}>Titre</th>
+                <th style={styles.th}>Type</th><th style={styles.th}>Client / Groupe</th><th style={styles.th}>Temps</th>
               </tr>
             </thead>
             <tbody>
@@ -443,12 +598,9 @@ function Dashboard() {
             <table style={styles.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>ID</th>
-                  <th style={styles.th}>Ticket</th>
-                  <th style={styles.th}>Type</th>
-                  <th style={styles.th}>Groupe</th>
-                  <th style={styles.th}>Heures</th>
-                  <th style={styles.th}>Date</th>
+                  <th style={styles.th}>ID</th><th style={styles.th}>Ticket</th>
+                  <th style={styles.th}>Type</th><th style={styles.th}>Groupe</th>
+                  <th style={styles.th}>Heures</th><th style={styles.th}>Date</th>
                 </tr>
               </thead>
               <tbody>
@@ -467,7 +619,7 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Sync Buttons */}
+        {/* Sync Button */}
         <div style={{ textAlign: "center", marginBottom: "25px" }}>
           <button style={styles.btn(loading ? "#999" : "#C8102E")} onClick={handleSmartSync} disabled={loading}>
             {loading ? "⏳ En cours..." : "🧠 Smart Sync (SaaS + On-Prem)"}
@@ -482,22 +634,10 @@ function Dashboard() {
               <div style={styles.card}>
                 <div style={styles.cardTitle}>🧠 Résultat Smart Sync</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
-                  <div style={styles.kpiCard("#28a745")}>
-                    <div style={{ fontSize: "11px" }}>Total Insérés</div>
-                    <div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.inserted}</div>
-                  </div>
-                  <div style={styles.kpiCard("#C8102E")}>
-                    <div style={{ fontSize: "11px" }}>SaaS</div>
-                    <div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.saasInserted || 0}</div>
-                  </div>
-                  <div style={styles.kpiCard("#0f3460")}>
-                    <div style={{ fontSize: "11px" }}>On-Prem</div>
-                    <div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.onPremInserted || 0}</div>
-                  </div>
-                  <div style={styles.kpiCard("#ff9800")}>
-                    <div style={{ fontSize: "11px" }}>Ignorés</div>
-                    <div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.skipped}</div>
-                  </div>
+                  <div style={styles.kpiCard("#28a745")}><div style={{ fontSize: "11px" }}>Total Insérés</div><div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.inserted}</div></div>
+                  <div style={styles.kpiCard("#C8102E")}><div style={{ fontSize: "11px" }}>SaaS</div><div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.saasInserted || 0}</div></div>
+                  <div style={styles.kpiCard("#0f3460")}><div style={{ fontSize: "11px" }}>On-Prem</div><div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.onPremInserted || 0}</div></div>
+                  <div style={styles.kpiCard("#ff9800")}><div style={{ fontSize: "11px" }}>Ignorés</div><div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.skipped}</div></div>
                 </div>
                 <div style={{ marginTop: "12px", padding: "10px", background: "#f8f8f8", borderRadius: "8px", fontSize: "13px", color: "#666" }}>
                   ✅ Temps restant : <strong>{smartResult.remainingTime}h</strong> — Tâches défaut : <strong>{smartResult.defaultTasksTime}h</strong> chacune
