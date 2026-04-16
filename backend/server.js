@@ -1,3 +1,4 @@
+const fetch = require("node-fetch");
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -193,6 +194,37 @@ app.get("/api/skipped-tickets", verifyToken, (req, res) => {
     if (err) return res.status(500).send(err);
     res.json(result);
   });
+});
+
+// Chatbot IA — DeepSeek API (100% gratuit)
+app.post("/api/chat", verifyToken, async (req, res) => {
+  try {
+    const { messages, context } = req.body;
+    
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: context },
+          ...messages
+        ],
+        max_tokens: 1000,
+        temperature: 0.7
+      })
+    });
+    const data = await response.json();
+    console.log("DeepSeek response:", JSON.stringify(data));
+    const reply = data.choices?.[0]?.message?.content || "Désolé, je n'ai pas pu répondre.";
+    res.json({ reply });
+  } catch (err) {
+    console.error("Chat error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 cron.schedule("0 2 * * *", () => {
