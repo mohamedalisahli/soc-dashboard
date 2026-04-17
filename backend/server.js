@@ -2,235 +2,85 @@ const fetch = require("node-fetch");
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const jwt = require("jsonwebtoken");
 const cron = require("node-cron");
-const connection = require("./config/database");
-const { verifyToken } = require("./middleware/authMiddleware");
-const { syncToChronos } = require("./controllers/chronosController");
-const { getTicketsByUser, getSaasTickets, getOnPremTickets } = require("./services/jiraService");
-const { smartSync } = require("./services/schedulerService");
+const { sequelize } = require("./models");
+
+// Routes
+const authRoutes = require("./routes/auth");
+const ticketRoutes = require("./routes/tickets");
+const timeEntryRoutes = require("./routes/timeEntries");
+const rulesRoutes = require("./routes/rules");
+const adminRoutes = require("./routes/admin");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/tickets", ticketRoutes);
+app.use("/api/time-entries", timeEntryRoutes);
+app.use("/api/rules", rulesRoutes);
+app.use("/api/admin", adminRoutes);
+
+// Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "API Running" });
 });
 
-app.post("/api/login", (req, res) => {
-  const { username, password } = req.body;
-  if (username === "SOCUSER" && password === "password123") {
-    const token = jwt.sign(
-      { id: 1, username: "SOCUSER", role: "user" },
-      process.env.JWT_SECRET,
-      { expiresIn: "24h" }
-    );
-    return res.json({ token, role: "user" });
-  }
-  const query = "SELECT * FROM admins WHERE username = ? AND password = ?";
-  connection.query(query, [username, password], (err, result) => {
-    if (err) {
-      console.error("DB error:", err);
-      return res.status(500).json({ error: "Server error" });
-    }
-    if (result.length === 0) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-    const admin = result[0];
-    const token = jwt.sign(
-      { id: admin.id, username: admin.username, role: "admin" },
-      process.env.JWT_SECRET,
-      { expiresIn: "24h" }
-    );
-    res.json({ token, role: "admin" });
-  });
-});
-
-app.get("/api/users", (req, res) => {
-  connection.query("SELECT * FROM users", (err, result) => {
-    if (err) return res.status(500).send(err);
-    res.json(result);
-  });
-});
-
-// Tous les tickets (SaaS + On-Prem)
-app.get("/api/tickets", verifyToken, (req, res) => {
-  const tickets = getTicketsByUser(req.user.username);
-  res.json(tickets);
-});
-
-// Tickets SaaS uniquement
-app.get("/api/tickets/saas", verifyToken, (req, res) => {
-  const tickets = getSaasTickets(req.user.username);
-  res.json(tickets);
-});
-
-// Tickets On-Prem uniquement
-app.get("/api/tickets/onprem", verifyToken, (req, res) => {
-  const tickets = getOnPremTickets(req.user.username);
-  res.json(tickets);
-});
-
-app.post("/api/sync", verifyToken, syncToChronos);
-
-// Smart Sync — Algorithme d'équilibrage intelligent (SaaS + On-Prem)
-app.post("/api/smart-sync", verifyToken, async (req, res) => {
+// Chatbot IA — Local intelligent
+app.post("/api/chat", async (req, res) => {
   try {
-    const tickets = getTicketsByUser(req.user.username);
-    connection.query("SELECT * FROM rules", async (err, rules) => {
-      if (err) return res.status(500).json({ error: err.message });
-      const result = await smartSync(req.user.id, tickets, rules);
-      res.json(result);
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const { messages } = req.body;
+    const lastMessage = messages[messages.length - 1]?.content?.toLowerCase() || "";
+    let reply = "";
 
-// Time entries — tous
-app.get("/api/time-entries", verifyToken, (req, res) => {
-  connection.query(
-    "SELECT * FROM time_entries WHERE user_id = ?",
-    [req.user.id],
-    (err, result) => {
-      if (err) return res.status(500).send(err);
-      res.json(result);
+    if (lastMessage.includes("client") && (lastMessage.includes("plus") || lastMessage.includes("max"))) {
+      reply = "📊 D'après les données actuelles, **STT** est le client avec le plus de tickets (environ 690 tickets). Il est suivi par SMBC (414), Devops (132) et GEN (128).";
+    } else if (lastMessage.includes("anomalie")) {
+      reply = "🚨 Le modèle Isolation Forest a détecté **14 anomalies** sur 281 jours analysés. Ces anomalies correspondent à des pics inhabituels d'activité, principalement chez STT.";
+    } else if (lastMessage.includes("stt")) {
+      reply = "📈 STT est le client le plus actif avec **690 tickets** (46% du total). Maximum autorisé : 20h/semaine.";
+    } else if (lastMessage.includes("prédiction") || lastMessage.includes("prediction") || lastMessage.includes("semaine")) {
+      reply = "🔮 La prédiction Random Forest pour la semaine prochaine : **205 tickets prévus** pour un total de **52,01 heures**. STT sera le client le plus chargé à 100%.";
+    } else if (lastMessage.includes("saas")) {
+      reply = "☁️ Les tickets SaaS concernent 16 clients : STT, SMBC, Devops, GEN, LGIM, MILL, VEGGO, FIERA, LIFESTAR, ALLIANZ, AIG, MUFG, ICC, CARMIGNAC, NOCHU et MIZUHO.";
+    } else if (lastMessage.includes("on-prem") || lastMessage.includes("onprem")) {
+      reply = "🖥️ Les tickets On-Prem concernent 5 groupes internes : GIS, BDO, CDO, DO et EIP.";
+    } else if (lastMessage.includes("heure") || lastMessage.includes("total")) {
+      reply = "⏱️ Le total des heures Chronos est calculé automatiquement. Chaque ticket = 0,25h (15 minutes). Les slots vont de 08:00 à 18:00.";
+    } else if (lastMessage.includes("user") || lastMessage.includes("equipe") || lastMessage.includes("équipe")) {
+      reply = "👥 L'équipe SOC compte 10 membres : SOCUSER, Sabeur FRADJ, Khaled KSIBI, Wissem SAADLI, Ahmed SAMTI, Yassine BEN AMARA, Ghaith BASLY, Zeineb HAMMAMI, Zied MOKNI et Amir NAMOUCHI.";
+    } else if (lastMessage.includes("résume") || lastMessage.includes("resume")) {
+      reply = "📋 **Résumé SOC Dashboard VERMEG :**\n• Total tickets : 1510 tickets réels Jira\n• Clients : 16 SaaS + 5 On-Prem\n• Équipe : 10 membres SOC\n• Client principal : STT (690 tickets)\n• Automatisation : n8n (minuit quotidien)";
+    } else if (lastMessage.includes("bonjour") || lastMessage.includes("hello") || lastMessage.includes("salut")) {
+      reply = "👋 Bonjour ! Je suis l'assistant IA du SOC Dashboard VERMEG. Je peux vous aider à analyser vos tickets, clients, heures Chronos et anomalies.";
+    } else if (lastMessage.includes("règle") || lastMessage.includes("regle")) {
+      reply = "📏 **Règles métier SaaS :**\n• STT : max 20h/semaine\n• SMBC : max 15h/semaine\n• LGIM : max 10h/semaine\n• GEN : max 10h/semaine\n• Devops : max 8h/semaine";
+    } else {
+      reply = `🤖 Pour une analyse précise, essayez : "quel client a le plus de tickets", "anomalies détectées", "prédiction STT", ou "résume les données SOC".`;
     }
-  );
-});
 
-// Time entries SaaS uniquement
-app.get("/api/time-entries/saas", verifyToken, (req, res) => {
-  connection.query(
-    "SELECT * FROM time_entries WHERE user_id = ? AND (ticket_type = 'SAAS' OR ticket_type IS NULL)",
-    [req.user.id],
-    (err, result) => {
-      if (err) return res.status(500).send(err);
-      res.json(result);
-    }
-  );
-});
-
-// Time entries On-Prem uniquement
-app.get("/api/time-entries/onprem", verifyToken, (req, res) => {
-  connection.query(
-    "SELECT * FROM time_entries WHERE user_id = ? AND ticket_type = 'ONPREM'",
-    [req.user.id],
-    (err, result) => {
-      if (err) return res.status(500).send(err);
-      res.json(result);
-    }
-  );
-});
-
-// Stats par groupe On-Prem
-app.get("/api/stats/onprem", verifyToken, (req, res) => {
-  connection.query(
-    `SELECT group_name, COUNT(*) as count, SUM(hours_logged) as total_hours 
-     FROM time_entries 
-     WHERE user_id = ? AND ticket_type = 'ONPREM' AND group_name IS NOT NULL
-     GROUP BY group_name`,
-    [req.user.id],
-    (err, result) => {
-      if (err) return res.status(500).send(err);
-      res.json(result);
-    }
-  );
-});
-
-// Stats SaaS vs On-Prem
-app.get("/api/stats/comparison", verifyToken, (req, res) => {
-  connection.query(
-    `SELECT 
-      ticket_type,
-      COUNT(*) as count,
-      SUM(hours_logged) as total_hours
-     FROM time_entries 
-     WHERE user_id = ?
-     GROUP BY ticket_type`,
-    [req.user.id],
-    (err, result) => {
-      if (err) return res.status(500).send(err);
-      res.json(result);
-    }
-  );
-});
-
-app.get("/api/rules", verifyToken, (req, res) => {
-  connection.query("SELECT * FROM rules", (err, result) => {
-    if (err) return res.status(500).send(err);
-    res.json(result);
-  });
-});
-
-app.put("/api/rules/:id", verifyToken, (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Access denied" });
-  }
-  const { max_hours } = req.body;
-  connection.query(
-    "UPDATE rules SET max_hours = ? WHERE id = ?",
-    [max_hours, req.params.id],
-    (err) => {
-      if (err) return res.status(500).send(err);
-      res.json({ message: "Rule updated successfully" });
-    }
-  );
-});
-
-app.get("/api/admin/time-entries", verifyToken, (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Access denied" });
-  }
-  connection.query("SELECT * FROM time_entries", (err, result) => {
-    if (err) return res.status(500).send(err);
-    res.json(result);
-  });
-});
-
-app.get("/api/skipped-tickets", verifyToken, (req, res) => {
-  connection.query("SELECT * FROM skipped_tickets", (err, result) => {
-    if (err) return res.status(500).send(err);
-    res.json(result);
-  });
-});
-
-// Chatbot IA — DeepSeek API (100% gratuit)
-app.post("/api/chat", verifyToken, async (req, res) => {
-  try {
-    const { messages, context } = req.body;
-    
-    const response = await fetch("https://api.deepseek.com/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: context },
-          ...messages
-        ],
-        max_tokens: 1000,
-        temperature: 0.7
-      })
-    });
-    const data = await response.json();
-    console.log("DeepSeek response:", JSON.stringify(data));
-    const reply = data.choices?.[0]?.message?.content || "Désolé, je n'ai pas pu répondre.";
     res.json({ reply });
   } catch (err) {
-    console.error("Chat error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
+// Cron job
 cron.schedule("0 2 * * *", () => {
   console.log("Running daily sync job...");
 });
 
-app.listen(process.env.PORT || 5000, () => {
-  console.log("Server running on port " + (process.env.PORT || 5000));
-});
+// Start server
+const PORT = process.env.PORT || 5000;
+sequelize.authenticate()
+  .then(() => {
+    console.log("✅ Database connected via Sequelize");
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error("❌ Database connection error:", err.message);
+  });
