@@ -1,68 +1,64 @@
-const { Ticket, Client, User, TimeEntry } = require("../models");
-const { Op } = require("sequelize");
+const { QueryTypes } = require("sequelize");
+const sequelize = require("../config/database");
 
-// Tous les tickets de l'user connecté
 const getMyTickets = async (req, res) => {
   try {
-    const tickets = await Ticket.findAll({
-      where: { assignee_id: req.user.id },
-      include: [
-        { model: Client, as: "client" },
-        { model: User, as: "assignee", attributes: ["id", "username", "full_name"] }
-      ],
-      order: [["outage_start", "DESC"]]
-    });
+    const tickets = await sequelize.query(`
+      SELECT t.*, c.name as client_name, c.ticket_type as client_type, t.group_name
+      FROM tickets t
+      LEFT JOIN clients c ON t.client_id = c.id
+      WHERE t.assignee_id = :userId
+      ORDER BY t.outage_start DESC
+    `, { type: QueryTypes.SELECT, replacements: { userId: req.user.id } });
     res.json(tickets);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// Tickets SaaS de l'user connecté
 const getMySaasTickets = async (req, res) => {
   try {
-    const tickets = await Ticket.findAll({
-      where: { assignee_id: req.user.id, ticket_type: "SAAS" },
-      include: [{ model: Client, as: "client" }],
-      order: [["outage_start", "DESC"]]
-    });
+    const tickets = await sequelize.query(`
+      SELECT t.*, c.name as client_name
+      FROM tickets t
+      LEFT JOIN clients c ON t.client_id = c.id
+      WHERE t.assignee_id = :userId AND t.ticket_type = 'SAAS'
+      ORDER BY t.outage_start DESC
+    `, { type: QueryTypes.SELECT, replacements: { userId: req.user.id } });
     res.json(tickets);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// Tickets OnPrem de l'user connecté
 const getMyOnPremTickets = async (req, res) => {
   try {
-    const tickets = await Ticket.findAll({
-      where: { assignee_id: req.user.id, ticket_type: "ONPREM" },
-      include: [{ model: Client, as: "client" }],
-      order: [["outage_start", "DESC"]]
-    });
+    const tickets = await sequelize.query(`
+      SELECT t.*, c.name as client_name
+      FROM tickets t
+      LEFT JOIN clients c ON t.client_id = c.id
+      WHERE t.assignee_id = :userId AND t.ticket_type = 'ONPREM'
+      ORDER BY t.outage_start DESC
+    `, { type: QueryTypes.SELECT, replacements: { userId: req.user.id } });
     res.json(tickets);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// Tickets non synchronisés
 const getUnsyncedTickets = async (req, res) => {
   try {
-    const syncedTicketIds = await TimeEntry.findAll({
-      where: { user_id: req.user.id, synced_to_chronos: true },
-      attributes: ["ticket_id"]
-    });
-    const syncedIds = syncedTicketIds.map(e => e.ticket_id);
-
-    const tickets = await Ticket.findAll({
-      where: {
-        assignee_id: req.user.id,
-        id: { [Op.notIn]: syncedIds.length > 0 ? syncedIds : [0] }
-      },
-      include: [{ model: Client, as: "client" }],
-      order: [["outage_start", "DESC"]]
-    });
+    const tickets = await sequelize.query(`
+      SELECT t.*, c.name as client_name
+      FROM tickets t
+      LEFT JOIN clients c ON t.client_id = c.id
+      WHERE t.assignee_id = :userId
+        AND t.id NOT IN (
+          SELECT DISTINCT ticket_id FROM time_entries
+          WHERE user_id = :userId AND synced_to_chronos = 1
+        )
+      ORDER BY t.outage_start DESC
+    `, { type: QueryTypes.SELECT, replacements: { userId: req.user.id } });
     res.json(tickets);
   } catch (err) {
     res.status(500).json({ error: err.message });

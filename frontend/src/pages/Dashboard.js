@@ -9,6 +9,7 @@ const COLORS = ["#C8102E", "#1a1a2e", "#0f3460", "#e94560", "#16213e", "#28a745"
 const ONPREM_COLORS = ["#0f3460", "#1a1a2e", "#e94560", "#16213e", "#C8102E"];
 const CLIENT_COLORS = ["#C8102E", "#0f3460", "#28a745", "#ff9800", "#e94560", "#1a1a2e", "#6c757d"];
 const AI_API = "http://localhost:5001";
+const PAGE_SIZE = 20;
 
 const styles = {
   navbar: {
@@ -52,8 +53,45 @@ const styles = {
   filterSelect: {
     padding: "8px 12px", borderRadius: "6px", border: "2px solid #e0e0e0",
     fontSize: "13px", outline: "none", marginRight: "10px", cursor: "pointer"
-  }
+  },
+  pagination: {
+    display: "flex", alignItems: "center", justifyContent: "center",
+    gap: "8px", marginTop: "15px", padding: "10px"
+  },
+  pageBtn: (active) => ({
+    padding: "6px 12px", border: "1px solid #ddd", borderRadius: "5px",
+    cursor: "pointer", background: active ? "#C8102E" : "white",
+    color: active ? "white" : "#333", fontWeight: active ? "bold" : "normal"
+  })
 };
+
+// ============================================================
+// PAGINATION COMPONENT
+// ============================================================
+function Pagination({ total, page, onPage }) {
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  if (totalPages <= 1) return null;
+  const pages = [];
+  const start = Math.max(1, page - 2);
+  const end = Math.min(totalPages, page + 2);
+  for (let i = start; i <= end; i++) pages.push(i);
+  return (
+    <div style={styles.pagination}>
+      <button style={styles.pageBtn(false)} onClick={() => onPage(1)} disabled={page === 1}>«</button>
+      <button style={styles.pageBtn(false)} onClick={() => onPage(page - 1)} disabled={page === 1}>‹</button>
+      {start > 1 && <span style={{ padding: "6px" }}>...</span>}
+      {pages.map(p => (
+        <button key={p} style={styles.pageBtn(p === page)} onClick={() => onPage(p)}>{p}</button>
+      ))}
+      {end < totalPages && <span style={{ padding: "6px" }}>...</span>}
+      <button style={styles.pageBtn(false)} onClick={() => onPage(page + 1)} disabled={page === totalPages}>›</button>
+      <button style={styles.pageBtn(false)} onClick={() => onPage(totalPages)} disabled={page === totalPages}>»</button>
+      <span style={{ fontSize: "13px", color: "#666", marginLeft: "10px" }}>
+        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} sur {total}
+      </span>
+    </div>
+  );
+}
 
 function Gauge({ value, max, label }) {
   const percent = Math.min((value / max) * 100, 100);
@@ -79,10 +117,6 @@ function Gauge({ value, max, label }) {
   );
 }
 
-const RULES = [
-  { client: "SMBC", max: 15 }, { client: "STT", max: 20 },
-  { client: "LGIM", max: 10 }, { client: "GEN", max: 10 }, { client: "Devops", max: 8 }
-];
 const ONPREM_GROUPS = ["GIS", "BDO", "CDO", "DO", "EIP"];
 
 // ============================================================
@@ -101,23 +135,21 @@ function Chatbot({ tickets, timeEntries, aiPredictions, aiAnomalies }) {
   }, [messages]);
 
   const buildContext = () => {
-    const saasTickets = tickets.filter(t => t.type === "SAAS");
-    const onPremTickets = tickets.filter(t => t.type === "ONPREM");
+    const saasTickets = tickets.filter(t => t.ticket_type === "SAAS");
+    const onPremTickets = tickets.filter(t => t.ticket_type === "ONPREM");
     const totalHeures = timeEntries.reduce((acc, e) => acc + parseFloat(e.hours_logged || 0), 0);
-    const byClient = saasTickets.reduce((acc, t) => { acc[t.client] = (acc[t.client] || 0) + 1; return acc; }, {});
-
-    return `Tu es l'assistant IA du SOC Dashboard de VERMEG Tunisie. Tu aides l'équipe SOC à analyser leurs données.
-
-DONNÉES ACTUELLES :
-- Total tickets : ${tickets.length} (SaaS: ${saasTickets.length}, On-Prem: ${onPremTickets.length})
-- Heures Chronos totales : ${totalHeures.toFixed(2)}h
-- Clients SaaS : ${Object.entries(byClient).map(([c, n]) => `${c}(${n})`).join(", ")}
-- Groupes On-Prem : GIS, BDO, CDO, DO, EIP
-- Règles métier : STT max 20h, SMBC max 15h, LGIM max 10h, GEN max 10h, Devops max 8h
-${aiPredictions ? `- Prédiction semaine prochaine : ${aiPredictions.total_tickets} tickets, ${aiPredictions.total_hours}h` : ""}
-${aiAnomalies ? `- Anomalies détectées : ${aiAnomalies.anomalies_count} sur ${aiAnomalies.total_analyzed} jours analysés` : ""}
-
-Réponds en français, de façon concise et professionnelle. Utilise des emojis quand approprié.`;
+    const byClient = saasTickets.reduce((acc, t) => {
+      const name = t.client_name || "Unknown";
+      acc[name] = (acc[name] || 0) + 1;
+      return acc;
+    }, {});
+    return `Tu es l'assistant IA du SOC Dashboard de VERMEG Tunisie.
+DONNÉES : Total tickets: ${tickets.length} (SaaS: ${saasTickets.length}, On-Prem: ${onPremTickets.length})
+Heures: ${totalHeures.toFixed(2)}h
+Clients SaaS: ${Object.entries(byClient).map(([c, n]) => `${c}(${n})`).join(", ")}
+${aiPredictions ? `Prédiction: ${aiPredictions.total_tickets} tickets, ${aiPredictions.total_hours}h` : ""}
+${aiAnomalies ? `Anomalies: ${aiAnomalies.anomalies_count} sur ${aiAnomalies.total_analyzed} jours` : ""}
+Réponds en français, concis et professionnel avec des emojis.`;
   };
 
   const sendMessage = async () => {
@@ -126,28 +158,21 @@ Réponds en français, de façon concise et professionnelle. Utilise des emojis 
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
-
     try {
       const token = localStorage.getItem("token");
       const response = await fetch("http://localhost:5000/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
           context: buildContext(),
           messages: [
-            ...messages.filter((m, i) => i > 0).map(m => ({
-              role: m.role, content: m.content
-            })),
+            ...messages.filter((m, i) => i > 0).map(m => ({ role: m.role, content: m.content })),
             { role: "user", content: userMsg }
           ]
         })
       });
       const data = await response.json();
-      const reply = data.reply || "Désolé, je n'ai pas pu répondre.";
-      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+      setMessages(prev => [...prev, { role: "assistant", content: data.reply || "Désolé, je n'ai pas pu répondre." }]);
     } catch (err) {
       setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Erreur de connexion au serveur." }]);
     }
@@ -156,30 +181,21 @@ Réponds en français, de façon concise et professionnelle. Utilise des emojis 
 
   return (
     <div style={{ background: "white", borderRadius: "10px", boxShadow: "0 4px 15px rgba(0,0,0,0.08)", overflow: "hidden" }}>
-      {/* Header */}
       <div style={{ background: "linear-gradient(135deg, #1a1a2e, #0f3460)", padding: "15px 20px", display: "flex", alignItems: "center", gap: "10px" }}>
         <div style={{ fontSize: "24px" }}>🤖</div>
         <div>
           <div style={{ color: "white", fontWeight: "bold", fontSize: "15px" }}>Assistant IA — SOC Dashboard</div>
-          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: "12px" }}>Powered by Claude AI</div>
+          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: "12px" }}>Powered by AI</div>
         </div>
         <div style={{ marginLeft: "auto", background: "#28a745", color: "white", padding: "4px 10px", borderRadius: "20px", fontSize: "11px" }}>● En ligne</div>
       </div>
-
-      {/* Messages */}
       <div style={{ height: "350px", overflowY: "auto", padding: "15px", background: "#f8f9fa" }}>
         {messages.map((msg, i) => (
           <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: "12px" }}>
             {msg.role === "assistant" && (
               <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "center", marginRight: "8px", fontSize: "16px", flexShrink: 0 }}>🤖</div>
             )}
-            <div style={{
-              maxWidth: "75%", padding: "10px 14px", borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-              background: msg.role === "user" ? "#C8102E" : "white",
-              color: msg.role === "user" ? "white" : "#333",
-              fontSize: "13px", lineHeight: "1.5",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-            }}>
+            <div style={{ maxWidth: "75%", padding: "10px 14px", borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px", background: msg.role === "user" ? "#C8102E" : "white", color: msg.role === "user" ? "white" : "#333", fontSize: "13px", lineHeight: "1.5", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
               {msg.content}
             </div>
             {msg.role === "user" && (
@@ -190,43 +206,27 @@ Réponds en français, de façon concise et professionnelle. Utilise des emojis 
         {loading && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
             <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>🤖</div>
-            <div style={{ background: "white", padding: "10px 14px", borderRadius: "18px 18px 18px 4px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+            <div style={{ background: "white", padding: "10px 14px", borderRadius: "18px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
               <div style={{ display: "flex", gap: "4px" }}>
-                {[0,1,2].map(i => (
-                  <div key={i} style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#C8102E", animation: `bounce 0.6s ${i * 0.2}s infinite` }} />
-                ))}
+                {[0,1,2].map(i => <div key={i} style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#C8102E" }} />)}
               </div>
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
-
-      {/* Suggestions rapides */}
       <div style={{ padding: "8px 15px", background: "#f0f0f0", display: "flex", gap: "8px", flexWrap: "wrap" }}>
         {["Quel client a le plus de tickets ?", "Y a-t-il des anomalies ?", "Prédiction pour STT ?", "Résume les données"].map(q => (
-          <button key={q} onClick={() => setInput(q)}
-            style={{ padding: "4px 10px", background: "white", border: "1px solid #C8102E", color: "#C8102E", borderRadius: "15px", fontSize: "11px", cursor: "pointer", fontWeight: "bold" }}>
-            {q}
-          </button>
+          <button key={q} onClick={() => setInput(q)} style={{ padding: "4px 10px", background: "white", border: "1px solid #C8102E", color: "#C8102E", borderRadius: "15px", fontSize: "11px", cursor: "pointer", fontWeight: "bold" }}>{q}</button>
         ))}
       </div>
-
-      {/* Input */}
       <div style={{ padding: "12px 15px", background: "white", display: "flex", gap: "10px", borderTop: "1px solid #f0f0f0" }}>
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyPress={e => e.key === "Enter" && sendMessage()}
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === "Enter" && sendMessage()}
           placeholder="Posez une question sur vos données SOC..."
           style={{ flex: 1, padding: "10px 15px", border: "2px solid #e0e0e0", borderRadius: "25px", fontSize: "13px", outline: "none" }}
-          onFocus={e => e.target.style.borderColor = "#C8102E"}
-          onBlur={e => e.target.style.borderColor = "#e0e0e0"}
-        />
+          onFocus={e => e.target.style.borderColor = "#C8102E"} onBlur={e => e.target.style.borderColor = "#e0e0e0"} />
         <button onClick={sendMessage} disabled={loading || !input.trim()}
-          style={{ background: loading || !input.trim() ? "#ccc" : "#C8102E", color: "white", border: "none", borderRadius: "50%", width: "42px", height: "42px", cursor: loading || !input.trim() ? "not-allowed" : "pointer", fontSize: "18px" }}>
-          ➤
-        </button>
+          style={{ background: loading || !input.trim() ? "#ccc" : "#C8102E", color: "white", border: "none", borderRadius: "50%", width: "42px", height: "42px", cursor: "pointer", fontSize: "18px" }}>➤</button>
       </div>
     </div>
   );
@@ -235,16 +235,21 @@ Réponds en français, de façon concise et professionnelle. Utilise des emojis 
 function Dashboard() {
   const [tickets, setTickets] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
-  const [syncMsg, setSyncMsg] = useState("");
-  const [smartResult, setSmartResult] = useState(null);
-  const [skipped, setSkipped] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [hoursByClient, setHoursByClient] = useState([]);
+  const [unsyncedTickets, setUnsyncedTickets] = useState([]);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncLogs, setSyncLogs] = useState([]);
   const [activeTab, setActiveTab] = useState("global");
   const [filterType, setFilterType] = useState("ALL");
   const [filterGroup, setFilterGroup] = useState("ALL");
   const [filterClient, setFilterClient] = useState("ALL");
 
-  // IA States
+  // Pagination states
+  const [ticketPage, setTicketPage] = useState(1);
+  const [saasPage, setSaasPage] = useState(1);
+  const [onpremPage, setOnpremPage] = useState(1);
+  const [unsyncedPage, setUnsyncedPage] = useState(1);
+
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPredictions, setAiPredictions] = useState(null);
   const [aiAnomalies, setAiAnomalies] = useState(null);
@@ -252,75 +257,96 @@ function Dashboard() {
   const [aiError, setAiError] = useState("");
   const [showChatbot, setShowChatbot] = useState(false);
 
+  const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+
   useEffect(() => {
-    API.get("/tickets").then(res => setTickets(res.data));
-    API.get("/time-entries").then(res => setTimeEntries(res.data));
+    API.get("/tickets").then(res => setTickets(res.data)).catch(console.error);
+    API.get("/time-entries").then(res => setTimeEntries(res.data)).catch(console.error);
+    API.get("/time-entries/stats").then(res => setHoursByClient(res.data)).catch(console.error);
+    API.get("/tickets/unsynced").then(res => setUnsyncedTickets(res.data)).catch(console.error);
   }, []);
 
   const handleSmartSync = async () => {
-    setLoading(true);
-    setSmartResult(null);
+    setSyncLoading(true);
+    setSyncLogs([]);
     try {
-      const res = await API.post("/smart-sync");
-      setSmartResult(res.data);
-      const skippedRes = await API.get("/skipped-tickets");
-      setSkipped(skippedRes.data);
-      const entriesRes = await API.get("/time-entries");
-      setTimeEntries(entriesRes.data);
-    } catch (err) { setSyncMsg("Erreur lors du Smart Sync"); }
-    setLoading(false);
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:5000/api/smart-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setSyncLogs([
+        `✅ Synchronisation terminée !`,
+        `📥 Insérés : ${data.inserted || 0}`,
+        `☁️ SaaS : ${data.saasInserted || 0}`,
+        `🖥️ On-Prem : ${data.onPremInserted || 0}`,
+        `⏭️ Ignorés : ${data.skipped || 0}`,
+        `⏱️ Temps : ${data.totalTime || 0}s`
+      ]);
+      // Refresh data
+      API.get("/tickets").then(res => setTickets(res.data));
+      API.get("/time-entries").then(res => setTimeEntries(res.data));
+      API.get("/tickets/unsynced").then(res => setUnsyncedTickets(res.data));
+    } catch (err) {
+      setSyncLogs(["❌ Erreur de synchronisation : " + err.message]);
+    }
+    setSyncLoading(false);
   };
 
   const handlePredictWorkload = async () => {
     setAiLoading(true); setAiError("");
-    try {
-      const res = await fetch(`${AI_API}/ai/predict-workload`);
-      setAiPredictions(await res.json());
-    } catch (err) { setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !"); }
+    try { setAiPredictions(await (await fetch(`${AI_API}/ai/predict-workload`)).json()); }
+    catch (err) { setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !"); }
     setAiLoading(false);
   };
 
   const handleDetectAnomalies = async () => {
     setAiLoading(true); setAiError("");
-    try {
-      const res = await fetch(`${AI_API}/ai/detect-anomalies`);
-      setAiAnomalies(await res.json());
-    } catch (err) { setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !"); }
+    try { setAiAnomalies(await (await fetch(`${AI_API}/ai/detect-anomalies`)).json()); }
+    catch (err) { setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !"); }
     setAiLoading(false);
   };
 
   const handleForecast7Days = async () => {
     setAiLoading(true); setAiError("");
-    try {
-      const res = await fetch(`${AI_API}/ai/predict-7days`);
-      setAiForecast(await res.json());
-    } catch (err) { setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !"); }
+    try { setAiForecast(await (await fetch(`${AI_API}/ai/predict-7days`)).json()); }
+    catch (err) { setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !"); }
     setAiLoading(false);
   };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
+    localStorage.removeItem("user");
     window.location.reload();
   };
 
-  const saasTickets = tickets.filter(t => t.type === "SAAS");
-  const onPremTickets = tickets.filter(t => t.type === "ONPREM");
+  const saasTickets = tickets.filter(t => t.ticket_type === "SAAS");
+  const onPremTickets = tickets.filter(t => t.ticket_type === "ONPREM");
 
   const filteredTickets = tickets.filter(t => {
-    if (filterType !== "ALL" && t.type !== filterType) return false;
-    if (filterClient !== "ALL" && t.client !== filterClient) return false;
+    if (filterType !== "ALL" && t.ticket_type !== filterType) return false;
+    if (filterClient !== "ALL" && t.client_name !== filterClient) return false;
     if (filterGroup !== "ALL" && t.group_name !== filterGroup) return false;
     return true;
   });
 
   const totalHeures = timeEntries.reduce((acc, e) => acc + parseFloat(e.hours_logged || 0), 0);
 
-  const byClient = saasTickets.reduce((acc, t) => { acc[t.client] = (acc[t.client] || 0) + 1; return acc; }, {});
+  // Charts data
+  const byClient = saasTickets.reduce((acc, t) => {
+    const name = t.client_name || "Unknown";
+    acc[name] = (acc[name] || 0) + 1;
+    return acc;
+  }, {});
   const saasChartData = Object.entries(byClient).map(([client, count]) => ({ client, tickets: count, heures: count * 0.25 }));
   const saasPieData = Object.entries(byClient).map(([client, count]) => ({ name: client, value: count }));
 
-  const byGroup = onPremTickets.reduce((acc, t) => { acc[t.group_name] = (acc[t.group_name] || 0) + 1; return acc; }, {});
+  const byGroup = onPremTickets.reduce((acc, t) => {
+    acc[t.group_name || "GIS"] = (acc[t.group_name || "GIS"] || 0) + 1;
+    return acc;
+  }, {});
   const onPremChartData = Object.entries(byGroup).map(([group, count]) => ({ group, tickets: count, heures: count * 0.25 }));
   const onPremPieData = Object.entries(byGroup).map(([group, count]) => ({ name: group, value: count }));
 
@@ -334,7 +360,7 @@ function Dashboard() {
     acc[d] = (acc[d] || 0) + parseFloat(e.hours_logged || 0);
     return acc;
   }, {});
-  const lineData = Object.entries(byDate).map(([date, heures]) => ({ date, heures }));
+  const lineData = Object.entries(byDate).sort().map(([date, heures]) => ({ date, heures }));
 
   const predChartData = aiPredictions ? aiPredictions.predictions.slice(0, 10).map(p => ({
     client: p.client, tickets: p.predicted_tickets, heures: p.predicted_hours
@@ -344,7 +370,6 @@ function Dashboard() {
     aiAnomalies.anomalies.reduce((acc, a) => { acc[a.client] = (acc[a.client] || 0) + 1; return acc; }, {})
   ).map(([client, count]) => ({ client, anomalies: count })) : [];
 
-  // Forecast 7 days — transformer pour LineChart
   const forecastLineData = aiForecast ? (() => {
     const dates = aiForecast.forecast[0]?.predictions.map(p => p.date) || [];
     return dates.map((date, i) => {
@@ -354,6 +379,21 @@ function Dashboard() {
     });
   })() : [];
 
+  // Heures par client depuis stats (raw SQL format)
+  const clientRules = hoursByClient
+    .filter(s => parseFloat(s.max_hours_per_week) > 0)
+    .map(s => ({
+      client: s.name || "Unknown",
+      used: parseFloat(s.total_hours || 0),
+      max: parseFloat(s.max_hours_per_week || 0)
+    }));
+
+  // Paginated data
+  const paginatedFilteredTickets = filteredTickets.slice((ticketPage - 1) * PAGE_SIZE, ticketPage * PAGE_SIZE);
+  const paginatedSaas = saasTickets.slice((saasPage - 1) * PAGE_SIZE, saasPage * PAGE_SIZE);
+  const paginatedOnPrem = onPremTickets.slice((onpremPage - 1) * PAGE_SIZE, onpremPage * PAGE_SIZE);
+  const paginatedUnsynced = unsyncedTickets.slice((unsyncedPage - 1) * PAGE_SIZE, unsyncedPage * PAGE_SIZE);
+
   return (
     <div style={styles.page}>
       <nav style={styles.navbar}>
@@ -362,6 +402,7 @@ function Dashboard() {
           <span style={styles.brand}>SOC DASHBOARD</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ color: "white", fontSize: "13px" }}>👤 {currentUser.full_name || "User"}</span>
           <button onClick={() => setShowChatbot(!showChatbot)}
             style={{ background: showChatbot ? "#28a745" : "rgba(255,255,255,0.2)", color: "white", border: "1px solid white", padding: "8px 18px", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}>
             🤖 Assistant IA
@@ -374,8 +415,6 @@ function Dashboard() {
       </nav>
 
       <div style={styles.container}>
-
-        {/* Chatbot flottant */}
         {showChatbot && (
           <div style={{ marginBottom: "25px" }}>
             <Chatbot tickets={tickets} timeEntries={timeEntries} aiPredictions={aiPredictions} aiAnomalies={aiAnomalies} />
@@ -397,8 +436,8 @@ function Dashboard() {
             <div style={{ fontSize: "32px", fontWeight: "bold" }}>{onPremTickets.length}</div>
           </div>
           <div style={styles.kpiCard("#ff9800")}>
-            <div style={{ fontSize: "12px", opacity: 0.9, marginBottom: "8px" }}>TEMPS TOTAL</div>
-            <div style={{ fontSize: "32px", fontWeight: "bold" }}>{tickets.length * 15} min</div>
+            <div style={{ fontSize: "12px", opacity: 0.9, marginBottom: "8px" }}>NON SYNCHRONISÉS</div>
+            <div style={{ fontSize: "32px", fontWeight: "bold" }}>{unsyncedTickets.length}</div>
           </div>
           <div style={styles.kpiCard("#28a745")}>
             <div style={{ fontSize: "12px", opacity: 0.9, marginBottom: "8px" }}>HEURES CHRONOS</div>
@@ -408,9 +447,9 @@ function Dashboard() {
 
         {/* Tabs */}
         <div style={{ marginBottom: "0", borderBottom: "2px solid #e0e0e0" }}>
-          {["global", "saas", "onprem", "ai"].map(tab => (
+          {["global", "saas", "onprem", "unsynced", "ai"].map(tab => (
             <button key={tab} style={styles.tabBtn(activeTab === tab)} onClick={() => setActiveTab(tab)}>
-              {tab === "global" ? "🌐 Vue Globale" : tab === "saas" ? "☁️ Vue SaaS" : tab === "onprem" ? "🖥️ Vue On-Prem" : "🤖 IA & Analytics"}
+              {tab === "global" ? "🌐 Vue Globale" : tab === "saas" ? "☁️ Vue SaaS" : tab === "onprem" ? "🖥️ Vue On-Prem" : tab === "unsynced" ? "⚠️ Non Synchronisés" : "🤖 IA & Analytics"}
             </button>
           ))}
         </div>
@@ -420,6 +459,25 @@ function Dashboard() {
           {/* VUE GLOBALE */}
           {activeTab === "global" && (
             <div>
+              {/* Smart Sync Button */}
+              <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "20px", padding: "15px", background: "#f8f9fa", borderRadius: "10px", border: "1px solid #e0e0e0" }}>
+                <button onClick={handleSmartSync} disabled={syncLoading}
+                  style={{ background: syncLoading ? "#ccc" : "#C8102E", color: "white", border: "none", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", cursor: syncLoading ? "not-allowed" : "pointer", fontSize: "15px" }}>
+                  {syncLoading ? "⏳ Synchronisation..." : "🧠 Smart Sync"}
+                </button>
+                <div style={{ flex: 1 }}>
+                  {syncLogs.length > 0 ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      {syncLogs.map((log, i) => (
+                        <span key={i} style={{ padding: "4px 12px", background: log.startsWith("❌") ? "#fff0f0" : "#f0fff4", border: `1px solid ${log.startsWith("❌") ? "#C8102E" : "#28a745"}`, borderRadius: "20px", fontSize: "13px", color: log.startsWith("❌") ? "#C8102E" : "#28a745", fontWeight: "bold" }}>{log}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ color: "#999", fontSize: "13px" }}>Cliquez sur Smart Sync pour synchroniser les tickets Jira vers Chronos automatiquement</span>
+                  )}
+                </div>
+              </div>
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
                 <div>
                   <div style={styles.cardTitle}>📊 SaaS vs On-Prem — Tickets</div>
@@ -487,28 +545,30 @@ function Dashboard() {
               </div>
               <div style={styles.cardTitle}>🎯 Heures utilisées vs Max autorisées</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "10px", marginBottom: "20px" }}>
-                {RULES.map(rule => {
-                  const used = timeEntries
-                    .filter(e => e.chronos_entry_id && e.chronos_entry_id.includes(rule.client.toUpperCase()))
-                    .reduce((acc, e) => acc + parseFloat(e.hours_logged || 0), 0);
-                  return <Gauge key={rule.client} value={used.toFixed(2)} max={rule.max} label={rule.client} />;
-                })}
+                {clientRules.map(rule => (
+                  <Gauge key={rule.client} value={rule.used.toFixed(2)} max={rule.max} label={rule.client} />
+                ))}
               </div>
-              <div style={styles.cardTitle}>🎫 Tickets SaaS</div>
+              <div style={styles.cardTitle}>🎫 Tickets SaaS ({saasTickets.length})</div>
               <table style={styles.table}>
-                <thead><tr><th style={styles.th}>ID</th><th style={styles.th}>Titre</th><th style={styles.th}>Client</th><th style={styles.th}>Type</th><th style={styles.th}>Temps</th></tr></thead>
+                <thead><tr>
+                  <th style={styles.th}>Jira Key</th>
+                  <th style={styles.th}>Résumé</th>
+                  <th style={styles.th}>Client</th>
+                  <th style={styles.th}>Date</th>
+                </tr></thead>
                 <tbody>
-                  {saasTickets.map((t, i) => (
+                  {paginatedSaas.map((t, i) => (
                     <tr key={t.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
-                      <td style={styles.td}><span style={styles.badge("#C8102E")}>{t.id}</span></td>
-                      <td style={styles.td}>{t.title}</td>
-                      <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{t.client}</span></td>
-                      <td style={styles.td}><span style={styles.badge("#C8102E")}>SAAS</span></td>
-                      <td style={styles.td}>15 min</td>
+                      <td style={styles.td}><span style={styles.badge("#C8102E")}>{t.jira_key}</span></td>
+                      <td style={styles.td} title={t.summary}>{t.summary?.substring(0, 60)}...</td>
+                      <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{t.client_name || "—"}</span></td>
+                      <td style={styles.td}>{t.outage_start ? new Date(t.outage_start).toLocaleDateString() : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <Pagination total={saasTickets.length} page={saasPage} onPage={setSaasPage} />
             </div>
           )}
 
@@ -540,33 +600,74 @@ function Dashboard() {
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div style={styles.cardTitle}>🎫 Tickets On-Prem</div>
+              <div style={styles.cardTitle}>🎫 Tickets On-Prem ({onPremTickets.length})</div>
               <table style={styles.table}>
-                <thead><tr><th style={styles.th}>ID</th><th style={styles.th}>Titre</th><th style={styles.th}>Groupe</th><th style={styles.th}>Type</th><th style={styles.th}>Temps</th></tr></thead>
+                <thead><tr>
+                  <th style={styles.th}>Jira Key</th>
+                  <th style={styles.th}>Résumé</th>
+                  <th style={styles.th}>Groupe</th>
+                  <th style={styles.th}>Date</th>
+                </tr></thead>
                 <tbody>
-                  {onPremTickets.map((t, i) => (
+                  {paginatedOnPrem.map((t, i) => (
                     <tr key={t.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
-                      <td style={styles.td}><span style={styles.badge("#0f3460")}>{t.id}</span></td>
-                      <td style={styles.td}>{t.title}</td>
-                      <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{t.group_name}</span></td>
-                      <td style={styles.td}><span style={styles.badge("#0f3460")}>ON-PREM</span></td>
-                      <td style={styles.td}>15 min</td>
+                      <td style={styles.td}><span style={styles.badge("#0f3460")}>{t.jira_key}</span></td>
+                      <td style={styles.td} title={t.summary}>{t.summary?.substring(0, 60)}...</td>
+                      <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{t.group_name || "GIS"}</span></td>
+                      <td style={styles.td}>{t.outage_start ? new Date(t.outage_start).toLocaleDateString() : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <Pagination total={onPremTickets.length} page={onpremPage} onPage={setOnpremPage} />
+            </div>
+          )}
+
+          {/* VUE NON SYNCHRONISÉS */}
+          {activeTab === "unsynced" && (
+            <div>
+              <div style={styles.cardTitle}>⚠️ Tickets Non Synchronisés avec Chronos ({unsyncedTickets.length})</div>
+              {unsyncedTickets.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px", color: "#28a745" }}>
+                  <div style={{ fontSize: "48px", marginBottom: "15px" }}>✅</div>
+                  <div style={{ fontSize: "16px" }}>Tous les tickets sont synchronisés !</div>
+                </div>
+              ) : (
+                <>
+                  <table style={styles.table}>
+                    <thead><tr>
+                      <th style={styles.th}>Jira Key</th>
+                      <th style={styles.th}>Résumé</th>
+                      <th style={styles.th}>Client</th>
+                      <th style={styles.th}>Type</th>
+                      <th style={styles.th}>Date</th>
+                    </tr></thead>
+                    <tbody>
+                      {paginatedUnsynced.map((t, i) => (
+                        <tr key={t.id} style={{ background: i % 2 === 0 ? "#fff5f5" : "#fff0f0" }}>
+                          <td style={styles.td}><span style={styles.badge("#ff9800")}>{t.jira_key}</span></td>
+                          <td style={styles.td} title={t.summary}>{t.summary?.substring(0, 60)}...</td>
+                          <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{t.client_name || "—"}</span></td>
+                          <td style={styles.td}><span style={styles.badge(t.ticket_type === "SAAS" ? "#C8102E" : "#0f3460")}>{t.ticket_type}</span></td>
+                          <td style={styles.td}>{t.outage_start ? new Date(t.outage_start).toLocaleDateString() : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <Pagination total={unsyncedTickets.length} page={unsyncedPage} onPage={setUnsyncedPage} />
+                </>
+              )}
             </div>
           )}
 
           {/* VUE IA */}
           {activeTab === "ai" && (
             <div>
-              {/* Header IA */}
               <div style={{ background: "linear-gradient(135deg, #1a1a2e, #0f3460)", borderRadius: "10px", padding: "20px", marginBottom: "20px", color: "white", textAlign: "center" }}>
                 <div style={{ fontSize: "28px", marginBottom: "8px" }}>🤖</div>
                 <div style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "6px" }}>Composante IA — SOC Dashboard</div>
                 <div style={{ fontSize: "13px", opacity: 0.8 }}>Prédiction • Détection d'anomalies • Forecast 7 jours • Chatbot</div>
-                <div style={{ fontSize: "11px", opacity: 0.6, marginTop: "6px" }}>Powered by Random Forest, Isolation Forest & Claude AI</div>
+                <div style={{ fontSize: "11px", opacity: 0.6, marginTop: "6px" }}>Powered by Random Forest & Isolation Forest</div>
               </div>
 
               {aiError && (
@@ -575,27 +676,21 @@ function Dashboard() {
                 </div>
               )}
 
-              {/* Boutons IA */}
               <div style={{ display: "flex", gap: "12px", marginBottom: "25px", justifyContent: "center", flexWrap: "wrap" }}>
-                <button onClick={handlePredictWorkload} disabled={aiLoading}
-                  style={{ ...styles.btn("#C8102E"), padding: "12px 24px", fontSize: "14px" }}>
+                <button onClick={handlePredictWorkload} disabled={aiLoading} style={{ ...styles.btn("#C8102E"), padding: "12px 24px", fontSize: "14px" }}>
                   {aiLoading ? "⏳..." : "📊 Prédire la Charge"}
                 </button>
-                <button onClick={handleDetectAnomalies} disabled={aiLoading}
-                  style={{ ...styles.btn("#0f3460"), padding: "12px 24px", fontSize: "14px" }}>
+                <button onClick={handleDetectAnomalies} disabled={aiLoading} style={{ ...styles.btn("#0f3460"), padding: "12px 24px", fontSize: "14px" }}>
                   {aiLoading ? "⏳..." : "🚨 Détecter Anomalies"}
                 </button>
-                <button onClick={handleForecast7Days} disabled={aiLoading}
-                  style={{ ...styles.btn("#28a745"), padding: "12px 24px", fontSize: "14px" }}>
+                <button onClick={handleForecast7Days} disabled={aiLoading} style={{ ...styles.btn("#28a745"), padding: "12px 24px", fontSize: "14px" }}>
                   {aiLoading ? "⏳..." : "🔮 Forecast 7 Jours"}
                 </button>
-                <button onClick={() => { setShowChatbot(true); setActiveTab("global"); }}
-                  style={{ ...styles.btn("#ff9800"), padding: "12px 24px", fontSize: "14px" }}>
+                <button onClick={() => { setShowChatbot(true); setActiveTab("global"); }} style={{ ...styles.btn("#ff9800"), padding: "12px 24px", fontSize: "14px" }}>
                   💬 Ouvrir Chatbot
                 </button>
               </div>
 
-              {/* Forecast 7 jours */}
               {aiForecast && (
                 <div style={{ marginBottom: "25px" }}>
                   <div style={styles.cardTitle}>🔮 Prédiction de Charge — 7 Prochains Jours</div>
@@ -603,33 +698,16 @@ function Dashboard() {
                     <LineChart data={forecastLineData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="date" stroke="#666" />
-                      <YAxis stroke="#666" label={{ value: "Tickets/jour", angle: -90, position: "insideLeft", fill: "#666", fontSize: 11 }} />
-                      <Tooltip />
-                      <Legend />
+                      <YAxis stroke="#666" />
+                      <Tooltip /><Legend />
                       {aiForecast.forecast.map((c, i) => (
-                        <Line key={c.client} type="monotone" dataKey={c.client}
-                          stroke={CLIENT_COLORS[i % CLIENT_COLORS.length]} strokeWidth={2}
-                          dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                        <Line key={c.client} type="monotone" dataKey={c.client} stroke={CLIENT_COLORS[i % CLIENT_COLORS.length]} strokeWidth={2} dot={{ r: 4 }} />
                       ))}
                     </LineChart>
                   </ResponsiveContainer>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "8px", marginTop: "15px" }}>
-                    {forecastLineData.map((day, i) => {
-                      const maxClient = aiForecast.forecast.reduce((max, c) => 
-                        c.predictions[i]?.tickets > (max.val || 0) ? { name: c.client, val: c.predictions[i]?.tickets } : max, {});
-                      return (
-                        <div key={i} style={{ background: "#f8f9fa", borderRadius: "8px", padding: "10px", textAlign: "center", border: "1px solid #e0e0e0" }}>
-                          <div style={{ fontSize: "11px", color: "#666", marginBottom: "4px" }}>{day.date}</div>
-                          <div style={{ fontSize: "13px", fontWeight: "bold", color: "#C8102E" }}>{maxClient.name}</div>
-                          <div style={{ fontSize: "11px", color: "#999" }}>{maxClient.val?.toFixed(0)} tickets</div>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
               )}
 
-              {/* Résultats Prédictions */}
               {aiPredictions && (
                 <div style={{ marginBottom: "25px" }}>
                   <div style={styles.cardTitle}>📊 Prédiction de Charge — Semaine Prochaine</div>
@@ -652,37 +730,9 @@ function Dashboard() {
                       <Bar dataKey="heures" fill="#0f3460" radius={[4,4,0,0]} name="Heures prévues" />
                     </BarChart>
                   </ResponsiveContainer>
-                  <div style={{ marginTop: "15px" }}>
-                    <table style={styles.table}>
-                      <thead><tr><th style={styles.th}>Client</th><th style={styles.th}>Tickets Prévus</th><th style={styles.th}>Heures Prévues</th><th style={styles.th}>Charge</th></tr></thead>
-                      <tbody>
-                        {aiPredictions.predictions.map((p, i) => {
-                          const maxT = Math.max(...aiPredictions.predictions.map(x => x.predicted_tickets));
-                          const percent = Math.round((p.predicted_tickets / maxT) * 100);
-                          const color = percent > 70 ? "#C8102E" : percent > 40 ? "#ff9800" : "#28a745";
-                          return (
-                            <tr key={p.client} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
-                              <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{p.client}</span></td>
-                              <td style={styles.td}><strong>{p.predicted_tickets}</strong></td>
-                              <td style={styles.td}><span style={styles.badge("#0f3460")}>{p.predicted_hours}h</span></td>
-                              <td style={styles.td}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                  <div style={{ flex: 1, height: "8px", background: "#f0f0f0", borderRadius: "4px" }}>
-                                    <div style={{ width: `${percent}%`, height: "8px", background: color, borderRadius: "4px" }} />
-                                  </div>
-                                  <span style={{ fontSize: "12px", color, fontWeight: "bold" }}>{percent}%</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
               )}
 
-              {/* Résultats Anomalies */}
               {aiAnomalies && (
                 <div>
                   <div style={styles.cardTitle}>🚨 Détection d'Anomalies</div>
@@ -705,22 +755,6 @@ function Dashboard() {
                       </BarChart>
                     </ResponsiveContainer>
                   )}
-                  <div style={{ marginTop: "15px", maxHeight: "300px", overflowY: "auto" }}>
-                    <table style={styles.table}>
-                      <thead><tr><th style={styles.th}>Date</th><th style={styles.th}>Client</th><th style={styles.th}>Tickets</th><th style={styles.th}>Heures</th><th style={styles.th}>Statut</th></tr></thead>
-                      <tbody>
-                        {aiAnomalies.anomalies.map((a, i) => (
-                          <tr key={i} style={{ background: i % 2 === 0 ? "#fff5f5" : "#fff0f0" }}>
-                            <td style={styles.td}>{a.date}</td>
-                            <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{a.client}</span></td>
-                            <td style={styles.td}><strong style={{ color: "#C8102E" }}>{a.ticket_count}</strong></td>
-                            <td style={styles.td}>{a.total_hours}h</td>
-                            <td style={styles.td}><span style={styles.badge("#C8102E")}>⚠️ Anomalie</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
               )}
 
@@ -737,99 +771,100 @@ function Dashboard() {
 
         {/* Filtres */}
         <div style={styles.card}>
-          <div style={styles.cardTitle}>🔍 Filtres — Tickets</div>
+          <div style={styles.cardTitle}>🔍 Filtres — Tickets ({filteredTickets.length})</div>
           <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "15px" }}>
-            <select style={styles.filterSelect} value={filterType} onChange={e => setFilterType(e.target.value)}>
+            <select style={styles.filterSelect} value={filterType} onChange={e => { setFilterType(e.target.value); setTicketPage(1); }}>
               <option value="ALL">Tous les types</option>
               <option value="SAAS">SaaS</option>
               <option value="ONPREM">On-Prem</option>
             </select>
-            <select style={styles.filterSelect} value={filterClient} onChange={e => setFilterClient(e.target.value)}>
-              <option value="ALL">Tous les clients</option>
-              {["STT", "SMBC", "LGIM", "GEN", "Devops"].map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select style={styles.filterSelect} value={filterGroup} onChange={e => setFilterGroup(e.target.value)}>
-              <option value="ALL">Tous les groupes</option>
-              {ONPREM_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-            <button onClick={() => { setFilterType("ALL"); setFilterClient("ALL"); setFilterGroup("ALL"); }}
+            {filterType !== "ONPREM" && (
+              <select style={styles.filterSelect} value={filterClient} onChange={e => { setFilterClient(e.target.value); setTicketPage(1); }}>
+                <option value="ALL">Tous les clients</option>
+                {[...new Set(saasTickets.map(t => t.client_name).filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+            {filterType !== "SAAS" && (
+              <select style={styles.filterSelect} value={filterGroup} onChange={e => { setFilterGroup(e.target.value); setTicketPage(1); }}>
+                <option value="ALL">Tous les groupes</option>
+                {ONPREM_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            )}
+            <button onClick={() => { setFilterType("ALL"); setFilterClient("ALL"); setFilterGroup("ALL"); setTicketPage(1); }}
               style={{ padding: "8px 16px", background: "#666", color: "white", border: "none", borderRadius: "6px", cursor: "pointer" }}>
               Réinitialiser
             </button>
           </div>
           <table style={styles.table}>
-            <thead><tr><th style={styles.th}>ID</th><th style={styles.th}>Titre</th><th style={styles.th}>Type</th><th style={styles.th}>Client / Groupe</th><th style={styles.th}>Temps</th></tr></thead>
+            <thead>
+              <tr>
+                <th style={styles.th}>Jira Key</th>
+                <th style={styles.th}>Résumé</th>
+                <th style={styles.th}>Type</th>
+                <th style={styles.th}>Client / Groupe</th>
+                <th style={styles.th}>Date</th>
+              </tr>
+            </thead>
             <tbody>
-              {filteredTickets.map((t, i) => (
+              {paginatedFilteredTickets.map((t, i) => (
                 <tr key={t.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
-                  <td style={styles.td}><span style={styles.badge(t.type === "SAAS" ? "#C8102E" : "#0f3460")}>{t.id}</span></td>
-                  <td style={styles.td}>{t.title}</td>
-                  <td style={styles.td}><span style={styles.badge(t.type === "SAAS" ? "#C8102E" : "#0f3460")}>{t.type}</span></td>
-                  <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{t.client || t.group_name}</span></td>
-                  <td style={styles.td}>15 min</td>
+                  <td style={styles.td}><span style={styles.badge(t.ticket_type === "SAAS" ? "#C8102E" : "#0f3460")}>{t.jira_key}</span></td>
+                  <td style={styles.td} title={t.summary}>{t.summary?.substring(0, 50)}...</td>
+                  <td style={styles.td}><span style={styles.badge(t.ticket_type === "SAAS" ? "#C8102E" : "#0f3460")}>{t.ticket_type}</span></td>
+                  <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{t.client_name || t.group_name || "—"}</span></td>
+                  <td style={styles.td}>{t.outage_start ? new Date(t.outage_start).toLocaleDateString() : "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <Pagination total={filteredTickets.length} page={ticketPage} onPage={setTicketPage} />
         </div>
 
         {/* Entrées de Temps */}
         <div style={styles.card}>
-          <div style={styles.cardTitle}>🕐 Entrées de Temps Chronos</div>
-          <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+          <div style={styles.cardTitle}>🕐 Mes Entrées de Temps Chronos ({timeEntries.length})</div>
+          <div style={{ maxHeight: "400px", overflowY: "auto" }}>
             <table style={styles.table}>
-              <thead><tr><th style={styles.th}>ID</th><th style={styles.th}>Ticket</th><th style={styles.th}>Type</th><th style={styles.th}>Groupe</th><th style={styles.th}>Heures</th><th style={styles.th}>Date</th></tr></thead>
+              <thead>
+                <tr>
+                  <th style={styles.th}>ID</th>
+                  <th style={styles.th}>Client</th>
+                  <th style={styles.th}>Type</th>
+                  <th style={styles.th}>Slot Horaire</th>
+                  <th style={styles.th}>Heures</th>
+                  <th style={styles.th}>Date</th>
+                  <th style={styles.th}>Synchronisé</th>
+                </tr>
+              </thead>
               <tbody>
-                {timeEntries.map((entry, i) => (
+                {timeEntries.slice(0, 50).map((entry, i) => (
                   <tr key={entry.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
                     <td style={styles.td}>{entry.id}</td>
-                    <td style={styles.td}><span style={styles.badge(entry.ticket_type === "ONPREM" ? "#0f3460" : "#C8102E")}>{entry.chronos_entry_id || "—"}</span></td>
+                    <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{entry.client_name || "—"}</span></td>
                     <td style={styles.td}><span style={styles.badge(entry.ticket_type === "ONPREM" ? "#0f3460" : "#C8102E")}>{entry.ticket_type || "SAAS"}</span></td>
-                    <td style={styles.td}>{entry.group_name || "—"}</td>
+                    <td style={styles.td}>
+                      <span style={{ fontSize: "12px", fontFamily: "monospace", background: "#f0f0f0", padding: "3px 8px", borderRadius: "4px" }}>
+                        {entry.slot_start} → {entry.slot_end}
+                      </span>
+                    </td>
                     <td style={styles.td}><span style={styles.badge("#28a745")}>{entry.hours_logged}h</span></td>
                     <td style={styles.td}>{entry.date ? entry.date.toString().slice(0, 10) : "—"}</td>
+                    <td style={styles.td}>
+                      <span style={styles.badge(entry.synced_to_chronos ? "#28a745" : "#ff9800")}>
+                        {entry.synced_to_chronos ? "✅ Oui" : "⏳ Non"}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* Sync Button */}
-        <div style={{ textAlign: "center", marginBottom: "25px" }}>
-          <button style={styles.btn(loading ? "#999" : "#C8102E")} onClick={handleSmartSync} disabled={loading}>
-            {loading ? "⏳ En cours..." : "🧠 Smart Sync (SaaS + On-Prem)"}
-          </button>
-          {syncMsg && <div style={{ marginTop: "15px", padding: "12px", background: "#f0fff4", border: "1px solid #28a745", borderRadius: "8px", color: "#28a745" }}>✅ {syncMsg}</div>}
-        </div>
-
-        {/* Smart Sync Result */}
-        {smartResult && (
-          <div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
-              <div style={styles.card}>
-                <div style={styles.cardTitle}>🧠 Résultat Smart Sync</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px" }}>
-                  <div style={styles.kpiCard("#28a745")}><div style={{ fontSize: "11px" }}>Total Insérés</div><div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.inserted}</div></div>
-                  <div style={styles.kpiCard("#C8102E")}><div style={{ fontSize: "11px" }}>SaaS</div><div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.saasInserted || 0}</div></div>
-                  <div style={styles.kpiCard("#0f3460")}><div style={{ fontSize: "11px" }}>On-Prem</div><div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.onPremInserted || 0}</div></div>
-                  <div style={styles.kpiCard("#ff9800")}><div style={{ fontSize: "11px" }}>Ignorés</div><div style={{ fontSize: "24px", fontWeight: "bold" }}>{smartResult.skipped}</div></div>
-                </div>
-                <div style={{ marginTop: "12px", padding: "10px", background: "#f8f8f8", borderRadius: "8px", fontSize: "13px", color: "#666" }}>
-                  ✅ Temps restant : <strong>{smartResult.remainingTime}h</strong> — Tâches défaut : <strong>{smartResult.defaultTasksTime}h</strong> chacune
-                </div>
-              </div>
-              <div style={styles.card}>
-                <div style={styles.cardTitle}>📋 Logs</div>
-                <div style={{ maxHeight: "180px", overflowY: "auto", fontSize: "12px" }}>
-                  {smartResult.logs.map((log, i) => (
-                    <div key={i} style={{ padding: "4px 0", color: log.includes("✅") ? "#28a745" : log.includes("⚠️") ? "#ff9800" : "#C8102E" }}>{log}</div>
-                  ))}
-                </div>
-              </div>
+          {timeEntries.length > 50 && (
+            <div style={{ textAlign: "center", padding: "10px", color: "#666", fontSize: "13px" }}>
+              Affichage des 50 premières entrées sur {timeEntries.length} au total
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
