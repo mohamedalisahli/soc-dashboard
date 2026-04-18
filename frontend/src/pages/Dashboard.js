@@ -65,9 +65,6 @@ const styles = {
   })
 };
 
-// ============================================================
-// PAGINATION COMPONENT
-// ============================================================
 function Pagination({ total, page, onPage }) {
   const totalPages = Math.ceil(total / PAGE_SIZE);
   if (totalPages <= 1) return null;
@@ -97,21 +94,22 @@ function Gauge({ value, max, label }) {
   const percent = Math.min((value / max) * 100, 100);
   const color = percent > 80 ? "#C8102E" : percent > 50 ? "#ff9800" : "#28a745";
   return (
-    <div style={{ textAlign: "center", padding: "10px" }}>
-      <div style={{ position: "relative", width: "150px", margin: "0 auto" }}>
-        <svg viewBox="0 0 100 60" style={{ width: "150px" }}>
-          <path d="M10,55 A45,45 0 0,1 90,55" fill="none" stroke="#f0f0f0" strokeWidth="10" strokeLinecap="round"/>
-          <path d="M10,55 A45,45 0 0,1 90,55" fill="none" stroke={color} strokeWidth="10"
+    <div style={{ textAlign: "center", padding: "10px", width: "100%" }}>
+      <div style={{ position: "relative", width: "120px", margin: "0 auto" }}>
+        <svg viewBox="0 0 100 60" style={{ width: "120px" }}>
+          <path d="M10,55 A45,45 0 0,1 90,55" fill="none" stroke="#e0e0e0" strokeWidth="12" strokeLinecap="round"/>
+          <path d="M10,55 A45,45 0 0,1 90,55" fill="none" stroke={color} strokeWidth="12"
             strokeLinecap="round" strokeDasharray={`${(percent / 100) * 141} 141`}/>
         </svg>
-        <div style={{ position: "absolute", bottom: "0", width: "100%", textAlign: "center" }}>
-          <div style={{ fontSize: "18px", fontWeight: "bold", color }}>{value}h</div>
-          <div style={{ fontSize: "11px", color: "#999" }}>/ {max}h max</div>
-        </div>
       </div>
-      <div style={{ fontSize: "13px", fontWeight: "bold", color: "#1a1a2e", marginTop: "8px" }}>{label}</div>
-      <div style={{ height: "6px", background: "#f0f0f0", borderRadius: "3px", marginTop: "6px" }}>
+      <div style={{ fontSize: "20px", fontWeight: "bold", color, marginTop: "5px" }}>{value}h</div>
+      <div style={{ fontSize: "12px", color: "#666", marginTop: "2px" }}>/ {max}h max</div>
+      <div style={{ fontSize: "13px", fontWeight: "bold", color: "#1a1a2e", marginTop: "6px" }}>{label}</div>
+      <div style={{ height: "6px", background: "#e0e0e0", borderRadius: "3px", marginTop: "6px" }}>
         <div style={{ height: "6px", background: color, borderRadius: "3px", width: `${percent}%`, transition: "width 0.5s" }}/>
+      </div>
+      <div style={{ fontSize: "12px", color, marginTop: "4px", fontWeight: "bold" }}>
+        {percent >= 100 ? "⚠️ Dépassé" : `${percent.toFixed(0)}%`}
       </div>
     </div>
   );
@@ -119,9 +117,6 @@ function Gauge({ value, max, label }) {
 
 const ONPREM_GROUPS = ["GIS", "BDO", "CDO", "DO", "EIP"];
 
-// ============================================================
-// CHATBOT COMPONENT
-// ============================================================
 function Chatbot({ tickets, timeEntries, aiPredictions, aiAnomalies }) {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "👋 Bonjour ! Je suis l'assistant IA du SOC Dashboard VERMEG. Posez-moi des questions sur vos tickets, vos clients, vos heures ou vos anomalies !" }
@@ -243,13 +238,10 @@ function Dashboard() {
   const [filterType, setFilterType] = useState("ALL");
   const [filterGroup, setFilterGroup] = useState("ALL");
   const [filterClient, setFilterClient] = useState("ALL");
-
-  // Pagination states
   const [ticketPage, setTicketPage] = useState(1);
   const [saasPage, setSaasPage] = useState(1);
   const [onpremPage, setOnpremPage] = useState(1);
   const [unsyncedPage, setUnsyncedPage] = useState(1);
-
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPredictions, setAiPredictions] = useState(null);
   const [aiAnomalies, setAiAnomalies] = useState(null);
@@ -284,7 +276,6 @@ function Dashboard() {
         `⏭️ Ignorés : ${data.skipped || 0}`,
         `⏱️ Temps : ${data.totalTime || 0}s`
       ]);
-      // Refresh data
       API.get("/tickets").then(res => setTickets(res.data));
       API.get("/time-entries").then(res => setTimeEntries(res.data));
       API.get("/tickets/unsynced").then(res => setUnsyncedTickets(res.data));
@@ -324,7 +315,6 @@ function Dashboard() {
 
   const saasTickets = tickets.filter(t => t.ticket_type === "SAAS");
   const onPremTickets = tickets.filter(t => t.ticket_type === "ONPREM");
-
   const filteredTickets = tickets.filter(t => {
     if (filterType !== "ALL" && t.ticket_type !== filterType) return false;
     if (filterClient !== "ALL" && t.client_name !== filterClient) return false;
@@ -334,7 +324,6 @@ function Dashboard() {
 
   const totalHeures = timeEntries.reduce((acc, e) => acc + parseFloat(e.hours_logged || 0), 0);
 
-  // Charts data
   const byClient = saasTickets.reduce((acc, t) => {
     const name = t.client_name || "Unknown";
     acc[name] = (acc[name] || 0) + 1;
@@ -379,16 +368,15 @@ function Dashboard() {
     });
   })() : [];
 
-  // Heures par client depuis stats (raw SQL format)
   const clientRules = hoursByClient
     .filter(s => parseFloat(s.max_hours_per_week) > 0)
     .map(s => ({
       client: s.name || "Unknown",
       used: parseFloat(s.total_hours || 0),
       max: parseFloat(s.max_hours_per_week || 0)
-    }));
+    }))
+    .sort((a, b) => (b.used / b.max) - (a.used / a.max));
 
-  // Paginated data
   const paginatedFilteredTickets = filteredTickets.slice((ticketPage - 1) * PAGE_SIZE, ticketPage * PAGE_SIZE);
   const paginatedSaas = saasTickets.slice((saasPage - 1) * PAGE_SIZE, saasPage * PAGE_SIZE);
   const paginatedOnPrem = onPremTickets.slice((onpremPage - 1) * PAGE_SIZE, onpremPage * PAGE_SIZE);
@@ -459,7 +447,6 @@ function Dashboard() {
           {/* VUE GLOBALE */}
           {activeTab === "global" && (
             <div>
-              {/* Smart Sync Button */}
               <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "20px", padding: "15px", background: "#f8f9fa", borderRadius: "10px", border: "1px solid #e0e0e0" }}>
                 <button onClick={handleSmartSync} disabled={syncLoading}
                   style={{ background: syncLoading ? "#ccc" : "#C8102E", color: "white", border: "none", padding: "12px 24px", borderRadius: "8px", fontWeight: "bold", cursor: syncLoading ? "not-allowed" : "pointer", fontSize: "15px" }}>
@@ -543,12 +530,43 @@ function Dashboard() {
                   </ResponsiveContainer>
                 </div>
               </div>
+
+              {/* JAUGES ORGANISÉES */}
               <div style={styles.cardTitle}>🎯 Heures utilisées vs Max autorisées</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "10px", marginBottom: "20px" }}>
-                {clientRules.map(rule => (
-                  <Gauge key={rule.client} value={rule.used.toFixed(2)} max={rule.max} label={rule.client} />
-                ))}
+
+              {/* Alertes clients dépassés */}
+              {clientRules.filter(r => r.used >= r.max).length > 0 && (
+                <div style={{ background: "#fff0f0", border: "1px solid #C8102E", borderRadius: "8px", padding: "10px 15px", marginBottom: "15px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "20px" }}>⚠️</span>
+                  <span style={{ color: "#C8102E", fontWeight: "bold", fontSize: "13px" }}>
+                    {clientRules.filter(r => r.used >= r.max).length} client(s) ont dépassé leur limite :&nbsp;
+                    {clientRules.filter(r => r.used >= r.max).map(r => r.client).join(", ")}
+                  </span>
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "15px", marginBottom: "20px" }}>
+                {clientRules.map(rule => {
+                  const percent = rule.used / rule.max;
+                  const borderColor = percent >= 1 ? "#C8102E" : percent >= 0.5 ? "#ff9800" : "#28a745";
+                  const bgColor = percent >= 1 ? "#fff5f5" : percent >= 0.5 ? "#fffbf0" : "#f0fff4";
+                  return (
+                    <div key={rule.client} style={{
+                      background: bgColor,
+                      borderRadius: "10px",
+                      padding: "10px",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                      border: `2px solid ${borderColor}`,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center"
+                    }}>
+                      <Gauge value={rule.used.toFixed(2)} max={rule.max} label={rule.client} />
+                    </div>
+                  );
+                })}
               </div>
+
               <div style={styles.cardTitle}>🎫 Tickets SaaS ({saasTickets.length})</div>
               <table style={styles.table}>
                 <thead><tr>
@@ -697,8 +715,7 @@ function Dashboard() {
                   <ResponsiveContainer width="100%" height={300}>
                     <LineChart data={forecastLineData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" stroke="#666" />
-                      <YAxis stroke="#666" />
+                      <XAxis dataKey="date" stroke="#666" /><YAxis stroke="#666" />
                       <Tooltip /><Legend />
                       {aiForecast.forecast.map((c, i) => (
                         <Line key={c.client} type="monotone" dataKey={c.client} stroke={CLIENT_COLORS[i % CLIENT_COLORS.length]} strokeWidth={2} dot={{ r: 4 }} />
