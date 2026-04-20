@@ -249,6 +249,7 @@ function Dashboard() {
   const [aiAnomalies, setAiAnomalies] = useState(null);
   const [aiForecast, setAiForecast] = useState(null);
   const [aiError, setAiError] = useState("");
+  const [aiEstimation, setAiEstimation] = useState(null);
   const [showChatbot, setShowChatbot] = useState(false);
   const [allOnPremTickets, setAllOnPremTickets] = useState([]);
   const [editEntry, setEditEntry] = useState(null);
@@ -336,6 +337,13 @@ API.get("/tickets").then(ticketsRes => {
   const handleForecast7Days = async () => {
     setAiLoading(true); setAiError("");
     try { setAiForecast(await (await fetch(`${AI_API}/ai/predict-7days`)).json()); }
+    catch (err) { setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !"); }
+    setAiLoading(false);
+  };
+
+  const handleEstimateByType = async () => {
+    setAiLoading(true); setAiError("");
+    try { setAiEstimation(await (await fetch(`${AI_API}/ai/estimate-by-type`)).json()); }
     catch (err) { setAiError("⚠️ API IA non disponible. Lance le notebook Jupyter d'abord !"); }
     setAiLoading(false);
   };
@@ -913,6 +921,9 @@ const onPremByGroup = ONPREM_GROUPS.map(g => ({
                 <button onClick={handleForecast7Days} disabled={aiLoading} style={{ ...styles.btn("#28a745"), padding: "12px 24px", fontSize: "14px" }}>
                   {aiLoading ? "⏳..." : "🔮 Forecast 7 Jours"}
                 </button>
+                <button onClick={handleEstimateByType} disabled={aiLoading} style={{ ...styles.btn("#6c757d"), padding: "12px 24px", fontSize: "14px" }}>
+                  {aiLoading ? "⏳..." : "⏱️ Estimer par Type"}
+                </button>
                 <button onClick={() => { setShowChatbot(true); setActiveTab("global"); }} style={{ ...styles.btn("#ff9800"), padding: "12px 24px", fontSize: "14px" }}>
                   💬 Ouvrir Chatbot
                 </button>
@@ -984,7 +995,46 @@ const onPremByGroup = ONPREM_GROUPS.map(g => ({
                 </div>
               )}
 
-              {!aiPredictions && !aiAnomalies && !aiForecast && !aiError && (
+              {aiEstimation && (
+                <div style={{ marginBottom: "25px" }}>
+                  <div style={styles.cardTitle}>⏱️ Estimation Temps par Type de Ticket</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "15px", marginBottom: "20px" }}>
+                    <div style={styles.kpiCard("#C8102E")}>
+                      <div style={{ fontSize: "12px", opacity: 0.9 }}>HAUTE COMPLEXITÉ</div>
+                      <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiEstimation.complexity.high}</div>
+                      <div style={{ fontSize: "12px", opacity: 0.8 }}>tickets (≥0.5h)</div>
+                    </div>
+                    <div style={styles.kpiCard("#ff9800")}>
+                      <div style={{ fontSize: "12px", opacity: 0.9 }}>MOYENNE COMPLEXITÉ</div>
+                      <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiEstimation.complexity.medium}</div>
+                      <div style={{ fontSize: "12px", opacity: 0.8 }}>tickets (0.25-0.5h)</div>
+                    </div>
+                    <div style={styles.kpiCard("#28a745")}>
+                      <div style={{ fontSize: "12px", opacity: 0.9 }}>FAIBLE COMPLEXITÉ</div>
+                      <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiEstimation.complexity.low}</div>
+                      <div style={{ fontSize: "12px", opacity: 0.8 }}>tickets (0.25h)</div>
+                    </div>
+                  </div>
+                  <table style={styles.table}>
+                    <thead><tr>
+                      <th style={styles.th}>Type</th>
+                      <th style={styles.th}>Temps Moyen Estimé</th>
+                      <th style={styles.th}>Total Tickets</th>
+                    </tr></thead>
+                    <tbody>
+                      {aiEstimation.by_type.map((t, i) => (
+                        <tr key={i} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
+                          <td style={styles.td}><span style={styles.badge(t.ticket_type === "SAAS" ? "#C8102E" : "#0f3460")}>{t.ticket_type}</span></td>
+                          <td style={styles.td}><strong>{parseFloat(t.avg_hours).toFixed(2)}h</strong></td>
+                          <td style={styles.td}>{t.total_tickets}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {!aiPredictions && !aiAnomalies && !aiForecast && !aiEstimation && !aiError && (
                 <div style={{ textAlign: "center", padding: "40px", color: "#999" }}>
                   <div style={{ fontSize: "48px", marginBottom: "15px" }}>🤖</div>
                   <div style={{ fontSize: "16px", marginBottom: "8px" }}>Clique sur un bouton pour lancer l'analyse IA</div>
