@@ -236,6 +236,7 @@ function Dashboard() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncLogs, setSyncLogs] = useState([]);
   const [activeTab, setActiveTab] = useState("global");
+  const [comparison, setComparison] = useState([]);
   const [filterType, setFilterType] = useState("ALL");
   const [filterGroup, setFilterGroup] = useState("ALL");
   const [filterClient, setFilterClient] = useState("ALL");
@@ -262,6 +263,33 @@ function Dashboard() {
     API.get("/time-entries/stats/user").then(res => setHoursByUser(res.data)).catch(console.error);
     API.get("/tickets/unsynced").then(res => setUnsyncedTickets(res.data)).catch(console.error);
     API.get("/tickets/onprem/all").then(res => setAllOnPremTickets(res.data)).catch(console.error);
+
+// Comparaison Jira vs Chronos
+API.get("/tickets").then(ticketsRes => {
+  API.get("/time-entries/stats").then(statsRes => {
+    const tickets = ticketsRes.data;
+    const stats = statsRes.data;
+    const byClient = {};
+    tickets.filter(t => t.ticket_type === "SAAS").forEach(t => {
+      const c = t.client_name || "Unknown";
+      if (!byClient[c]) byClient[c] = { client: c, jira_tickets: 0, jira_hours: 0, chronos_hours: 0 };
+      byClient[c].jira_tickets += 1;
+      byClient[c].jira_hours += 0.25;
+    });
+    stats.forEach(s => {
+      const c = s.name || "Unknown";
+      if (!byClient[c]) byClient[c] = { client: c, jira_tickets: 0, jira_hours: 0, chronos_hours: 0 };
+      byClient[c].chronos_hours += parseFloat(s.total_hours || 0);
+    });
+    const result = Object.values(byClient).map(c => ({
+      ...c,
+      ecart: (c.chronos_hours - c.jira_hours).toFixed(2),
+      jira_hours: c.jira_hours.toFixed(2),
+      chronos_hours: c.chronos_hours.toFixed(2)
+    }));
+    setComparison(result);
+  });
+}).catch(console.error);
   }, []);
 
   const handleSmartSync = async () => {
@@ -484,9 +512,9 @@ const onPremByGroup = ONPREM_GROUPS.map(g => ({
 
         {/* Tabs */}
         <div style={{ marginBottom: "0", borderBottom: "2px solid #e0e0e0" }}>
-          {["global", "saas", "onprem", "unsynced", "ai"].map(tab => (
+          {["global", "saas", "onprem", "unsynced", "comparison", "ai"].map(tab => (
             <button key={tab} style={styles.tabBtn(activeTab === tab)} onClick={() => setActiveTab(tab)}>
-              {tab === "global" ? "🌐 Vue Globale" : tab === "saas" ? "☁️ Vue SaaS" : tab === "onprem" ? "🖥️ Vue On-Prem" : tab === "unsynced" ? "⚠️ Non Synchronisés" : "🤖 IA & Analytics"}
+              {tab === "global" ? "🌐 Vue Globale" : tab === "saas" ? "☁️ Vue SaaS" : tab === "onprem" ? "🖥️ Vue On-Prem" : tab === "unsynced" ? "⚠️ Non Synchronisés" : tab === "comparison" ? "📊 Jira vs Chronos" : "🤖 IA & Analytics"}
             </button>
           ))}
         </div>
@@ -736,6 +764,89 @@ const onPremByGroup = ONPREM_GROUPS.map(g => ({
                 </tbody>
               </table>
               <Pagination total={allOnPremTickets.length} page={onpremPage} onPage={setOnpremPage} />
+            </div>
+          )}
+
+          {/* VUE COMPARAISON JIRA VS CHRONOS */}
+          {activeTab === "comparison" && (
+            <div>
+              <div style={{ background: "linear-gradient(135deg, #1a1a2e, #0f3460)", borderRadius: "10px", padding: "20px", marginBottom: "20px", color: "white", textAlign: "center" }}>
+                <div style={{ fontSize: "28px", marginBottom: "8px" }}>📊</div>
+                <div style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "6px" }}>Comparaison Jira vs Chronos</div>
+                <div style={{ fontSize: "13px", opacity: 0.8 }}>Écart entre les heures estimées Jira et les heures réelles Chronos par client</div>
+              </div>
+
+              {/* KPI Comparaison */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "15px", marginBottom: "20px" }}>
+                <div style={styles.kpiCard("#C8102E")}>
+                  <div style={{ fontSize: "12px", opacity: 0.9, marginBottom: "8px" }}>HEURES JIRA (ESTIMÉES)</div>
+                  <div style={{ fontSize: "32px", fontWeight: "bold" }}>
+                    {comparison.reduce((acc, c) => acc + parseFloat(c.jira_hours), 0).toFixed(2)}h
+                  </div>
+                </div>
+                <div style={styles.kpiCard("#0f3460")}>
+                  <div style={{ fontSize: "12px", opacity: 0.9, marginBottom: "8px" }}>HEURES CHRONOS (RÉELLES)</div>
+                  <div style={{ fontSize: "32px", fontWeight: "bold" }}>
+                    {comparison.reduce((acc, c) => acc + parseFloat(c.chronos_hours), 0).toFixed(2)}h
+                  </div>
+                </div>
+                <div style={styles.kpiCard("#ff9800")}>
+                  <div style={{ fontSize: "12px", opacity: 0.9, marginBottom: "8px" }}>ÉCART TOTAL</div>
+                  <div style={{ fontSize: "32px", fontWeight: "bold" }}>
+                    {comparison.reduce((acc, c) => acc + parseFloat(c.ecart), 0).toFixed(2)}h
+                  </div>
+                </div>
+              </div>
+
+              {/* Graphique comparaison */}
+              <div style={styles.cardTitle}>📊 Heures Jira vs Chronos par Client</div>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={comparison}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="client" stroke="#666" />
+                  <YAxis stroke="#666" />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="jira_hours" fill="#C8102E" radius={[4,4,0,0]} name="Heures Jira (estimées)" />
+                  <Bar dataKey="chronos_hours" fill="#0f3460" radius={[4,4,0,0]} name="Heures Chronos (réelles)" />
+                </BarChart>
+              </ResponsiveContainer>
+
+              {/* Table comparaison */}
+              <div style={{ ...styles.cardTitle, marginTop: "20px" }}>📋 Détail par Client</div>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Client</th>
+                    <th style={styles.th}>Tickets Jira</th>
+                    <th style={styles.th}>Heures Jira (estimées)</th>
+                    <th style={styles.th}>Heures Chronos (réelles)</th>
+                    <th style={styles.th}>Écart</th>
+                    <th style={styles.th}>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparison.sort((a, b) => Math.abs(b.ecart) - Math.abs(a.ecart)).map((c, i) => {
+                    const ecart = parseFloat(c.ecart);
+                    const statut = ecart > 5 ? "⚠️ Sur-déclaré" : ecart < -5 ? "❌ Sous-déclaré" : "✅ OK";
+                    const statutColor = ecart > 5 ? "#ff9800" : ecart < -5 ? "#C8102E" : "#28a745";
+                    return (
+                      <tr key={c.client} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
+                        <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{c.client}</span></td>
+                        <td style={styles.td}><strong>{c.jira_tickets}</strong></td>
+                        <td style={styles.td}><span style={styles.badge("#C8102E")}>{c.jira_hours}h</span></td>
+                        <td style={styles.td}><span style={styles.badge("#0f3460")}>{c.chronos_hours}h</span></td>
+                        <td style={styles.td}>
+                          <span style={{ fontWeight: "bold", color: ecart > 0 ? "#ff9800" : ecart < 0 ? "#C8102E" : "#28a745" }}>
+                            {ecart > 0 ? "+" : ""}{c.ecart}h
+                          </span>
+                        </td>
+                        <td style={styles.td}><span style={styles.badge(statutColor)}>{statut}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
 
