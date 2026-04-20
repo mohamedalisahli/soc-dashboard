@@ -46,6 +46,22 @@ const getMyOnPremTickets = async (req, res) => {
   }
 };
 
+// NOUVEAU — tous les tickets On-Prem de l'équipe (vue globale)
+const getAllOnPremTickets = async (req, res) => {
+  try {
+    const tickets = await sequelize.query(`
+      SELECT t.*, u.full_name as assignee_name
+      FROM tickets t
+      LEFT JOIN users u ON t.assignee_id = u.id
+      WHERE t.ticket_type = 'ONPREM'
+      ORDER BY t.outage_start DESC
+    `, { type: QueryTypes.SELECT });
+    res.json(tickets);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 const getUnsyncedTickets = async (req, res) => {
   try {
     const tickets = await sequelize.query(`
@@ -65,4 +81,4 @@ const getUnsyncedTickets = async (req, res) => {
   }
 };
 
-module.exports = { getMyTickets, getMySaasTickets, getMyOnPremTickets, getUnsyncedTickets };
+module.exports = { getMyTickets, getMySaasTickets, getMyOnPremTickets, getAllOnPremTickets, getUnsyncedTickets };

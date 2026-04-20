@@ -34,7 +34,8 @@ const styles = {
   kpiCard: (bg) => ({
     background: bg, borderRadius: "10px", padding: "15px", textAlign: "center",
     color: "white", boxShadow: "0 4px 15px rgba(0,0,0,0.15)"
-  })
+  }),
+  select: { padding: "8px 12px", borderRadius: "6px", border: "2px solid #e0e0e0", fontSize: "13px", outline: "none", cursor: "pointer", width: "100%" }
 };
 
 function Admin() {
@@ -43,7 +44,9 @@ function Admin() {
   const [tickets, setTickets] = useState([]);
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
+  const [clients, setClients] = useState([]);
   const [msg, setMsg] = useState("");
+  const [msgType, setMsgType] = useState("success");
   const [activeTab, setActiveTab] = useState("rules");
 
   const [filterClient, setFilterClient] = useState("");
@@ -51,6 +54,11 @@ function Admin() {
   const [filterType, setFilterType] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+
+  // Formulaire nouvelle règle per_user
+  const [newRuleClientId, setNewRuleClientId] = useState("");
+  const [newRuleUserId, setNewRuleUserId] = useState("");
+  const [newRuleMaxHours, setNewRuleMaxHours] = useState("");
 
   // eslint-disable-next-line
   useEffect(() => { loadData(); }, []);
@@ -65,6 +73,17 @@ function Admin() {
       setRules(rulesRes.data);
       setUsers(usersRes.data);
       setStats(statsRes.data);
+
+      // Extraire les clients depuis les règles
+      const uniqueClients = [];
+      const seen = new Set();
+      rulesRes.data.forEach(r => {
+        if (r.client && !seen.has(r.client.id)) {
+          seen.add(r.client.id);
+          uniqueClients.push(r.client);
+        }
+      });
+      setClients(uniqueClients);
     } catch (err) { console.error(err); }
     loadTimeEntries();
     loadTickets();
@@ -94,11 +113,45 @@ function Admin() {
     } catch (err) { console.error(err); }
   };
 
+  const showMsg = (text, type = "success") => {
+    setMsg(text); setMsgType(type);
+    setTimeout(() => setMsg(""), 3000);
+  };
+
   const handleUpdateRule = async (id, max_hours) => {
     await API.put(`/rules/${id}`, { max_hours: parseFloat(max_hours) });
-    setMsg("✅ Règle mise à jour avec succès !");
-    setTimeout(() => setMsg(""), 3000);
+    showMsg("✅ Règle mise à jour avec succès !");
     loadData();
+  };
+
+  const handleCreateUserRule = async () => {
+    if (!newRuleClientId || !newRuleUserId || !newRuleMaxHours) {
+      showMsg("⚠️ Veuillez remplir tous les champs !", "error");
+      return;
+    }
+    try {
+      await API.post("/rules", {
+        client_id: parseInt(newRuleClientId),
+        user_id: parseInt(newRuleUserId),
+        max_hours: parseFloat(newRuleMaxHours)
+      });
+      showMsg("✅ Règle per_user créée avec succès !");
+      setNewRuleClientId(""); setNewRuleUserId(""); setNewRuleMaxHours("");
+      loadData();
+    } catch (err) {
+      showMsg("❌ Erreur : " + err.message, "error");
+    }
+  };
+
+  const handleDeleteRule = async (id) => {
+    if (!window.confirm("Supprimer cette règle ?")) return;
+    try {
+      await API.delete(`/rules/${id}`);
+      showMsg("✅ Règle supprimée !");
+      loadData();
+    } catch (err) {
+      showMsg("❌ Erreur suppression", "error");
+    }
   };
 
   const handleLogout = () => {
@@ -109,6 +162,8 @@ function Admin() {
   };
 
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+  const globalRules = rules.filter(r => r.rule_type === "global" || !r.user_id);
+  const perUserRules = rules.filter(r => r.rule_type === "per_user" && r.user_id);
 
   return (
     <div style={styles.page}>
@@ -127,7 +182,7 @@ function Admin() {
 
       <div style={styles.container}>
         {msg && (
-          <div style={{ padding: "12px 20px", background: "#f0fff4", border: "1px solid #28a745", borderRadius: "8px", color: "#28a745", marginBottom: "20px", fontWeight: "bold" }}>
+          <div style={{ padding: "12px 20px", background: msgType === "error" ? "#fff0f0" : "#f0fff4", border: `1px solid ${msgType === "error" ? "#C8102E" : "#28a745"}`, borderRadius: "8px", color: msgType === "error" ? "#C8102E" : "#28a745", marginBottom: "20px", fontWeight: "bold" }}>
             {msg}
           </div>
         )}
@@ -166,7 +221,8 @@ function Admin() {
           {/* RULES TAB */}
           {activeTab === "rules" && (
             <div>
-              <div style={styles.cardTitle}>⚙️ Règles Métier — Max Heures par Client</div>
+              {/* RÈGLES GLOBALES */}
+              <div style={styles.cardTitle}>⚙️ Règles Globales — Max Heures par Client</div>
               <table style={styles.table}>
                 <thead>
                   <tr>
@@ -178,11 +234,11 @@ function Admin() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rules.map((rule, i) => (
+                  {globalRules.map((rule, i) => (
                     <tr key={rule.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
                       <td style={styles.td}>{rule.id}</td>
                       <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{rule.client?.name || "—"}</span></td>
-                      <td style={styles.td}><span style={styles.badge(rule.rule_type === "global" ? "#0f3460" : "#ff9800")}>{rule.rule_type}</span></td>
+                      <td style={styles.td}><span style={styles.badge("#0f3460")}>{rule.rule_type}</span></td>
                       <td style={styles.td}>
                         <input type="number" style={styles.input} defaultValue={rule.max_hours} id={`rule-${rule.id}`} />
                       </td>
@@ -196,6 +252,79 @@ function Admin() {
                   ))}
                 </tbody>
               </table>
+
+              {/* RÈGLES PER_USER */}
+              <div style={{ ...styles.cardTitle, marginTop: "30px" }}>👤 Règles par Utilisateur — Max Heures par User par Client</div>
+
+              {/* Formulaire création */}
+              <div style={{ background: "#f8f9fa", border: "1px solid #e0e0e0", borderRadius: "10px", padding: "20px", marginBottom: "20px" }}>
+                <div style={{ fontWeight: "bold", color: "#1a1a2e", marginBottom: "15px", fontSize: "14px" }}>➕ Créer une nouvelle règle per_user</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "15px", alignItems: "end" }}>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#666", display: "block", marginBottom: "5px" }}>Client</label>
+                    <select style={styles.select} value={newRuleClientId} onChange={e => setNewRuleClientId(e.target.value)}>
+                      <option value="">Sélectionner un client</option>
+                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#666", display: "block", marginBottom: "5px" }}>Membre SOC</label>
+                    <select style={styles.select} value={newRuleUserId} onChange={e => setNewRuleUserId(e.target.value)}>
+                      <option value="">Sélectionner un user</option>
+                      {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "12px", color: "#666", display: "block", marginBottom: "5px" }}>Max Heures/semaine</label>
+                    <input type="number" style={{ ...styles.input, width: "100%", boxSizing: "border-box" }}
+                      placeholder="ex: 20" value={newRuleMaxHours} onChange={e => setNewRuleMaxHours(e.target.value)} />
+                  </div>
+                  <button onClick={handleCreateUserRule}
+                    style={{ background: "#28a745", color: "white", border: "none", padding: "10px 20px", borderRadius: "6px", cursor: "pointer", fontWeight: "bold", fontSize: "14px" }}>
+                    ✅ Créer
+                  </button>
+                </div>
+              </div>
+
+              {/* Table des règles per_user */}
+              {perUserRules.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "20px", color: "#999", fontSize: "13px" }}>
+                  Aucune règle per_user définie. Créez-en une ci-dessus.
+                </div>
+              ) : (
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>ID</th>
+                      <th style={styles.th}>Client</th>
+                      <th style={styles.th}>Membre SOC</th>
+                      <th style={styles.th}>Max Heures</th>
+                      <th style={styles.th}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {perUserRules.map((rule, i) => (
+                      <tr key={rule.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
+                        <td style={styles.td}>{rule.id}</td>
+                        <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{rule.client?.name || "—"}</span></td>
+                        <td style={styles.td}><span style={styles.badge("#0f3460")}>{rule.user?.full_name || "—"}</span></td>
+                        <td style={styles.td}>
+                          <input type="number" style={styles.input} defaultValue={rule.max_hours} id={`rule-${rule.id}`} />
+                        </td>
+                        <td style={styles.td} style={{ display: "flex", gap: "8px" }}>
+                          <button style={styles.btnModify} onClick={() => {
+                            const val = document.getElementById(`rule-${rule.id}`).value;
+                            handleUpdateRule(rule.id, val);
+                          }}>Modifier</button>
+                          <button style={{ ...styles.btnModify, background: "#666" }} onClick={() => handleDeleteRule(rule.id)}>
+                            🗑️ Supprimer
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           )}
 

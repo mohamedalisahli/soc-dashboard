@@ -57,7 +57,8 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
       return res.json({
         inserted: 0, saasInserted: 0, onPremInserted: 0,
         skipped: 0, totalTime: 0,
-        logs: ["✅ Tous les tickets sont déjà synchronisés !"]
+        logs: ["✅ Tous les tickets sont déjà synchronisés !"],
+        clientsDepasses: [], tousDepassent: false
       });
     }
 
@@ -253,13 +254,43 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
       logs.push(`⏱️ Temps restant ${tempsRestant.toFixed(2)}h → 3 tâches (${heuresParTache}h chacune)`);
     }
 
+    // 8. Vérification double — alertes dépassement
+    const clientsDepasses = [];
+
+    for (const [clientName, usedH] of Object.entries(usedHoursMap)) {
+      const maxH = maxHoursMap[clientName] || 0;
+      if (maxH > 0 && usedH >= maxH) {
+        clientsDepasses.push({ client: clientName, used: usedH.toFixed(2), max: maxH });
+      }
+    }
+
+    // Alerte 1 : UN client dépasse
+    if (clientsDepasses.length > 0) {
+      clientsDepasses.forEach(c => {
+        logs.push(`🔴 ALERTE : ${c.client} a dépassé sa limite — ${c.used}h / ${c.max}h`);
+      });
+    }
+
+    // Alerte 2 : TOUS les clients dépassent
+    const clientsAvecRegles = Object.keys(maxHoursMap).filter(c => maxHoursMap[c] > 0);
+    const tousDepassent = clientsAvecRegles.length > 0 && clientsAvecRegles.every(c => {
+      const used = usedHoursMap[c] || 0;
+      return used >= maxHoursMap[c];
+    });
+
+    if (tousDepassent) {
+      logs.push(`🚨 ALERTE CRITIQUE : TOUS les clients ont dépassé leur limite hebdomadaire !`);
+    }
+
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
     logs.push(`🏁 Synchronisation terminée en ${totalTime}s`);
 
     res.json({
       inserted, saasInserted, onPremInserted, skipped,
       totalTime, logs,
-      skippedTickets: skippedTickets.slice(0, 10)
+      skippedTickets: skippedTickets.slice(0, 10),
+      clientsDepasses,
+      tousDepassent
     });
 
   } catch (err) {

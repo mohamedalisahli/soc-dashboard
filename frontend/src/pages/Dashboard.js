@@ -231,6 +231,7 @@ function Dashboard() {
   const [tickets, setTickets] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
   const [hoursByClient, setHoursByClient] = useState([]);
+  const [hoursByUser, setHoursByUser] = useState([]);
   const [unsyncedTickets, setUnsyncedTickets] = useState([]);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncLogs, setSyncLogs] = useState([]);
@@ -248,6 +249,7 @@ function Dashboard() {
   const [aiForecast, setAiForecast] = useState(null);
   const [aiError, setAiError] = useState("");
   const [showChatbot, setShowChatbot] = useState(false);
+  const [allOnPremTickets, setAllOnPremTickets] = useState([]);
 
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
 
@@ -255,7 +257,9 @@ function Dashboard() {
     API.get("/tickets").then(res => setTickets(res.data)).catch(console.error);
     API.get("/time-entries").then(res => setTimeEntries(res.data)).catch(console.error);
     API.get("/time-entries/stats").then(res => setHoursByClient(res.data)).catch(console.error);
+    API.get("/time-entries/stats/user").then(res => setHoursByUser(res.data)).catch(console.error);
     API.get("/tickets/unsynced").then(res => setUnsyncedTickets(res.data)).catch(console.error);
+    API.get("/tickets/onprem/all").then(res => setAllOnPremTickets(res.data)).catch(console.error);
   }, []);
 
   const handleSmartSync = async () => {
@@ -332,12 +336,16 @@ function Dashboard() {
   const saasChartData = Object.entries(byClient).map(([client, count]) => ({ client, tickets: count, heures: count * 0.25 }));
   const saasPieData = Object.entries(byClient).map(([client, count]) => ({ name: client, value: count }));
 
-  const byGroup = onPremTickets.reduce((acc, t) => {
+  const byGroup = allOnPremTickets.reduce((acc, t) => {
     acc[t.group_name || "GIS"] = (acc[t.group_name || "GIS"] || 0) + 1;
     return acc;
   }, {});
   const onPremChartData = Object.entries(byGroup).map(([group, count]) => ({ group, tickets: count, heures: count * 0.25 }));
-  const onPremPieData = Object.entries(byGroup).map(([group, count]) => ({ name: group, value: count }));
+const onPremPieData = Object.entries(byGroup).map(([group, count]) => ({ name: group, value: count }));
+const onPremByGroup = ONPREM_GROUPS.map(g => ({
+  group: g,
+  tickets: allOnPremTickets.filter(t => t.group_name === g).length
+}));
 
   const comparisonData = [
     { name: "SaaS", tickets: saasTickets.length, heures: saasTickets.length * 0.25 },
@@ -531,10 +539,8 @@ function Dashboard() {
                 </div>
               </div>
 
-              {/* JAUGES ORGANISÉES */}
-              <div style={styles.cardTitle}>🎯 Heures utilisées vs Max autorisées</div>
-
-              {/* Alertes clients dépassés */}
+              {/* JAUGES PAR CLIENT */}
+              <div style={styles.cardTitle}>🎯 Heures utilisées vs Max autorisées — Par Client</div>
               {clientRules.filter(r => r.used >= r.max).length > 0 && (
                 <div style={{ background: "#fff0f0", border: "1px solid #C8102E", borderRadius: "8px", padding: "10px 15px", marginBottom: "15px", display: "flex", alignItems: "center", gap: "10px" }}>
                   <span style={{ fontSize: "20px" }}>⚠️</span>
@@ -544,28 +550,77 @@ function Dashboard() {
                   </span>
                 </div>
               )}
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "15px", marginBottom: "20px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "15px", marginBottom: "25px" }}>
                 {clientRules.map(rule => {
                   const percent = rule.used / rule.max;
                   const borderColor = percent >= 1 ? "#C8102E" : percent >= 0.5 ? "#ff9800" : "#28a745";
                   const bgColor = percent >= 1 ? "#fff5f5" : percent >= 0.5 ? "#fffbf0" : "#f0fff4";
                   return (
                     <div key={rule.client} style={{
-                      background: bgColor,
-                      borderRadius: "10px",
-                      padding: "10px",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                      border: `2px solid ${borderColor}`,
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center"
+                      background: bgColor, borderRadius: "10px", padding: "10px",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: `2px solid ${borderColor}`,
+                      display: "flex", flexDirection: "column", alignItems: "center"
                     }}>
                       <Gauge value={rule.used.toFixed(2)} max={rule.max} label={rule.client} />
                     </div>
                   );
                 })}
               </div>
+
+              {/* JAUGES PAR USER */}
+              <div style={styles.cardTitle}>👥 Heures par Membre de l'Équipe</div>
+              {hoursByUser.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "20px", color: "#999", fontSize: "13px" }}>
+                  Aucune donnée disponible pour cet utilisateur.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "15px", marginBottom: "20px" }}>
+                  {hoursByUser.map(u => {
+                    const used = parseFloat(u.total_hours || 0);
+                    const maxHours = parseFloat(u.max_hours_per_week || 40);
+                    const percent = Math.min((used / maxHours) * 100, 100);
+                    const color = percent > 80 ? "#C8102E" : percent > 50 ? "#ff9800" : "#28a745";
+                    const saasH = parseFloat(u.saas_hours || 0);
+                    const onpremH = parseFloat(u.onprem_hours || 0);
+                    return (
+                      <div key={u.user_id} style={{
+                        background: percent >= 100 ? "#fff5f5" : percent >= 50 ? "#fffbf0" : "#f0fff4",
+                        borderRadius: "10px", padding: "15px",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                        border: `2px solid ${color}`,
+                        textAlign: "center"
+                      }}>
+                        <div style={{ fontSize: "28px", marginBottom: "6px" }}>👤</div>
+                        <div style={{ fontWeight: "bold", fontSize: "13px", color: "#1a1a2e", marginBottom: "10px" }}>
+                          {u.full_name}
+                        </div>
+                        <div style={{ fontSize: "26px", fontWeight: "bold", color }}>{used.toFixed(2)}h</div>
+                        <div style={{ fontSize: "11px", color: "#666", marginTop: "4px" }}>/ {maxHours}h max/semaine</div>
+                        <div style={{ height: "6px", background: "#e0e0e0", borderRadius: "3px", margin: "8px 0" }}>
+                          <div style={{ height: "6px", background: color, borderRadius: "3px", width: `${percent}%`, transition: "width 0.5s" }}/>
+                        </div>
+                        <div style={{ fontSize: "12px", color, fontWeight: "bold", marginBottom: "8px" }}>
+                          {percent >= 100 ? "⚠️ Dépassé" : `${percent.toFixed(0)}%`}
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-around", marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #e0e0e0" }}>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "13px", fontWeight: "bold", color: "#C8102E" }}>{saasH.toFixed(2)}h</div>
+                            <div style={{ fontSize: "10px", color: "#999" }}>SaaS</div>
+                          </div>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "13px", fontWeight: "bold", color: "#0f3460" }}>{onpremH.toFixed(2)}h</div>
+                            <div style={{ fontSize: "10px", color: "#999" }}>On-Prem</div>
+                          </div>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: "13px", fontWeight: "bold", color: "#28a745" }}>{u.total_tickets}</div>
+                            <div style={{ fontSize: "10px", color: "#999" }}>Tickets</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <div style={styles.cardTitle}>🎫 Tickets SaaS ({saasTickets.length})</div>
               <table style={styles.table}>
@@ -618,26 +673,28 @@ function Dashboard() {
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div style={styles.cardTitle}>🎫 Tickets On-Prem ({onPremTickets.length})</div>
+              <div style={styles.cardTitle}>🎫 Tickets On-Prem ({allOnPremTickets.length})</div>
               <table style={styles.table}>
                 <thead><tr>
                   <th style={styles.th}>Jira Key</th>
                   <th style={styles.th}>Résumé</th>
                   <th style={styles.th}>Groupe</th>
+                  <th style={styles.th}>Assigné à</th>
                   <th style={styles.th}>Date</th>
                 </tr></thead>
                 <tbody>
-                  {paginatedOnPrem.map((t, i) => (
+                  {allOnPremTickets.slice((onpremPage-1)*PAGE_SIZE, onpremPage*PAGE_SIZE).map((t, i) => (
                     <tr key={t.id} style={{ background: i % 2 === 0 ? "white" : "#fafafa" }}>
                       <td style={styles.td}><span style={styles.badge("#0f3460")}>{t.jira_key}</span></td>
                       <td style={styles.td} title={t.summary}>{t.summary?.substring(0, 60)}...</td>
                       <td style={styles.td}><span style={styles.badge("#1a1a2e")}>{t.group_name || "GIS"}</span></td>
+                      <td style={styles.td}><span style={styles.badge("#666")}>{t.assignee_name || "—"}</span></td>
                       <td style={styles.td}>{t.outage_start ? new Date(t.outage_start).toLocaleDateString() : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <Pagination total={onPremTickets.length} page={onpremPage} onPage={setOnpremPage} />
+              <Pagination total={allOnPremTickets.length} page={onpremPage} onPage={setOnpremPage} />
             </div>
           )}
 

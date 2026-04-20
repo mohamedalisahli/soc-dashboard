@@ -1,6 +1,6 @@
 const { Rule, Client, User } = require("../models");
 
-// Toutes les règles globales
+// Toutes les règles
 const getRules = async (req, res) => {
   try {
     const rules = await Rule.findAll({
@@ -57,4 +57,16 @@ const createUserRule = async (req, res) => {
   }
 };
 
-module.exports = { getRules, getRulesByClient, updateRule, createUserRule };
+// Supprimer une règle (admin only)
+const deleteRule = async (req, res) => {
+  try {
+    const rule = await Rule.findByPk(req.params.id);
+    if (!rule) return res.status(404).json({ error: "Rule not found" });
+    await rule.destroy();
+    res.json({ message: "Rule deleted" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { getRules, getRulesByClient, updateRule, createUserRule, deleteRule };

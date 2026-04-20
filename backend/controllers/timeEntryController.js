@@ -64,4 +64,28 @@ const getMyHoursByClient = async (req, res) => {
   }
 };
 
-module.exports = { getMyTimeEntries, getMySaasEntries, getMyOnPremEntries, getMyHoursByClient };
+const getMyHoursByUser = async (req, res) => {
+  try {
+    const stats = await sequelize.query(`
+      SELECT u.id as user_id, u.full_name, u.username,
+        COUNT(te.id) as total_tickets,
+        SUM(te.hours_logged) as total_hours,
+        SUM(CASE WHEN te.ticket_type = 'SAAS' THEN te.hours_logged ELSE 0 END) as saas_hours,
+        SUM(CASE WHEN te.ticket_type = 'ONPREM' THEN te.hours_logged ELSE 0 END) as onprem_hours,
+        COALESCE(
+          (SELECT SUM(r.max_hours) FROM rules r 
+           WHERE r.user_id = u.id AND r.rule_type = 'per_user'),
+          40
+        ) as max_hours_per_week
+      FROM time_entries te
+      JOIN users u ON te.user_id = u.id
+      WHERE te.user_id = :userId
+      GROUP BY te.user_id, u.full_name, u.username
+    `, { type: QueryTypes.SELECT, replacements: { userId: req.user.id } });
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { getMyTimeEntries, getMySaasEntries, getMyOnPremEntries, getMyHoursByClient, getMyHoursByUser };

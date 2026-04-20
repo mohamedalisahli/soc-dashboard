@@ -97,7 +97,7 @@ const getHoursStats = async (req, res) => {
       GROUP BY te.user_id, u.username, u.full_name
     `, { type: QueryTypes.SELECT });
 
-    const exceedingClients = byClient.filter(s => 
+    const exceedingClients = byClient.filter(s =>
       s.max_hours_per_week > 0 && parseFloat(s.total_hours) > parseFloat(s.max_hours_per_week)
     );
 
@@ -108,4 +108,18 @@ const getHoursStats = async (req, res) => {
   }
 };
 
-module.exports = { getAllTimeEntries, getAllTickets, getAllUsers, getHoursStats };
+// Tous les clients (admin)
+const getAllClients = async (req, res) => {
+  try {
+    const sequelize = require("../config/database");
+    const clients = await sequelize.query(
+      "SELECT * FROM clients ORDER BY name",
+      { type: QueryTypes.SELECT }
+    );
+    res.json(clients);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { getAllTimeEntries, getAllTickets, getAllUsers, getHoursStats, getAllClients };
