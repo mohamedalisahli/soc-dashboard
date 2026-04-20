@@ -250,6 +250,8 @@ function Dashboard() {
   const [aiError, setAiError] = useState("");
   const [showChatbot, setShowChatbot] = useState(false);
   const [allOnPremTickets, setAllOnPremTickets] = useState([]);
+  const [editEntry, setEditEntry] = useState(null);
+  const [editForm, setEditForm] = useState({ hours_logged: "", slot_start: "", slot_end: "", date: "" });
 
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
 
@@ -310,7 +312,46 @@ function Dashboard() {
     setAiLoading(false);
   };
 
-  const handleLogout = () => {
+  const handleDeleteEntry = async (id) => {
+  if (!window.confirm("Supprimer cette entrée ?")) return;
+  try {
+    const token = localStorage.getItem("token");
+    await fetch(`http://localhost:5000/api/time-entries/${id}`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    setTimeEntries(prev => prev.filter(e => e.id !== id));
+  } catch (err) {
+    alert("Erreur lors de la suppression");
+  }
+};
+
+const handleEditEntry = (entry) => {
+  setEditEntry(entry);
+  setEditForm({
+    hours_logged: entry.hours_logged,
+    slot_start: entry.slot_start,
+    slot_end: entry.slot_end,
+    date: entry.date ? entry.date.toString().slice(0, 10) : ""
+  });
+};
+
+const handleUpdateEntry = async () => {
+  try {
+    const token = localStorage.getItem("token");
+    await fetch(`http://localhost:5000/api/time-entries/${editEntry.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify(editForm)
+    });
+    setTimeEntries(prev => prev.map(e => e.id === editEntry.id ? { ...e, ...editForm } : e));
+    setEditEntry(null);
+  } catch (err) {
+    alert("Erreur lors de la modification");
+  }
+};
+
+const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
     localStorage.removeItem("user");
@@ -897,6 +938,50 @@ const onPremByGroup = ONPREM_GROUPS.map(g => ({
         {/* Entrées de Temps */}
         <div style={styles.card}>
           <div style={styles.cardTitle}>🕐 Mes Entrées de Temps Chronos ({timeEntries.length})</div>
+
+          {/* Modal Modifier */}
+          {editEntry && (
+            <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: "white", borderRadius: "12px", padding: "30px", width: "400px", boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
+                <div style={{ fontSize: "18px", fontWeight: "bold", color: "#1a1a2e", marginBottom: "20px", borderBottom: "2px solid #C8102E", paddingBottom: "10px" }}>✏️ Modifier l'entrée #{editEntry.id}</div>
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "bold", color: "#666", display: "block", marginBottom: "5px" }}>Heures</label>
+                  <input type="number" step="0.25" value={editForm.hours_logged}
+                    onChange={e => setEditForm({ ...editForm, hours_logged: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", border: "2px solid #e0e0e0", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "bold", color: "#666", display: "block", marginBottom: "5px" }}>Slot début</label>
+                  <input type="time" value={editForm.slot_start?.slice(0,5)}
+                    onChange={e => setEditForm({ ...editForm, slot_start: e.target.value + ":00" })}
+                    style={{ width: "100%", padding: "8px 12px", border: "2px solid #e0e0e0", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "bold", color: "#666", display: "block", marginBottom: "5px" }}>Slot fin</label>
+                  <input type="time" value={editForm.slot_end?.slice(0,5)}
+                    onChange={e => setEditForm({ ...editForm, slot_end: e.target.value + ":00" })}
+                    style={{ width: "100%", padding: "8px 12px", border: "2px solid #e0e0e0", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: "20px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "bold", color: "#666", display: "block", marginBottom: "5px" }}>Date</label>
+                  <input type="date" value={editForm.date}
+                    onChange={e => setEditForm({ ...editForm, date: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", border: "2px solid #e0e0e0", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button onClick={() => setEditEntry(null)}
+                    style={{ padding: "10px 20px", background: "#666", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}>
+                    Annuler
+                  </button>
+                  <button onClick={handleUpdateEntry}
+                    style={{ padding: "10px 20px", background: "#28a745", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}>
+                    ✅ Sauvegarder
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={{ maxHeight: "400px", overflowY: "auto" }}>
             <table style={styles.table}>
               <thead>
@@ -908,6 +993,7 @@ const onPremByGroup = ONPREM_GROUPS.map(g => ({
                   <th style={styles.th}>Heures</th>
                   <th style={styles.th}>Date</th>
                   <th style={styles.th}>Synchronisé</th>
+                  <th style={styles.th}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -927,6 +1013,18 @@ const onPremByGroup = ONPREM_GROUPS.map(g => ({
                       <span style={styles.badge(entry.synced_to_chronos ? "#28a745" : "#ff9800")}>
                         {entry.synced_to_chronos ? "✅ Oui" : "⏳ Non"}
                       </span>
+                    </td>
+                    <td style={styles.td}>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button onClick={() => handleEditEntry(entry)}
+                          style={{ padding: "4px 10px", background: "#0f3460", color: "white", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "12px", fontWeight: "bold" }}>
+                          ✏️ Modifier
+                        </button>
+                        <button onClick={() => handleDeleteEntry(entry.id)}
+                          style={{ padding: "4px 10px", background: "#C8102E", color: "white", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "12px", fontWeight: "bold" }}>
+                          🗑️ Supprimer
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

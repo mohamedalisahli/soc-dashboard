@@ -88,4 +88,43 @@ const getMyHoursByUser = async (req, res) => {
   }
 };
 
-module.exports = { getMyTimeEntries, getMySaasEntries, getMyOnPremEntries, getMyHoursByClient, getMyHoursByUser };
+const updateTimeEntry = async (req, res) => {
+  try {
+    const { hours_logged, slot_start, slot_end, date } = req.body;
+    await sequelize.query(`
+      UPDATE time_entries 
+      SET hours_logged = :hours_logged,
+          slot_start = :slot_start,
+          slot_end = :slot_end,
+          date = :date
+      WHERE id = :id AND user_id = :userId
+    `, {
+      type: QueryTypes.UPDATE,
+      replacements: {
+        hours_logged, slot_start, slot_end, date,
+        id: req.params.id,
+        userId: req.user.id
+      }
+    });
+    res.json({ message: "Entrée mise à jour avec succès" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const deleteTimeEntry = async (req, res) => {
+  try {
+    await sequelize.query(`
+      DELETE FROM time_entries 
+      WHERE id = :id AND user_id = :userId
+    `, {
+      type: QueryTypes.DELETE,
+      replacements: { id: req.params.id, userId: req.user.id }
+    });
+    res.json({ message: "Entrée supprimée avec succès" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { getMyTimeEntries, getMySaasEntries, getMyOnPremEntries, getMyHoursByClient, getMyHoursByUser, updateTimeEntry, deleteTimeEntry };
