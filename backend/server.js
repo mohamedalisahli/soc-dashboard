@@ -178,6 +178,7 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
       }
 
       try {
+        // ✅ CORRIGÉ : synced_to_chronos = 1 (au lieu de 0)
         await db.query(`
           INSERT INTO time_entries
             (ticket_id, user_id, client_id, ticket_type, group_name,
@@ -185,7 +186,7 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
              created_at, updated_at)
           VALUES
             (:ticketId, :userId, :clientId, :ticketType, :groupName,
-             :slotStart, :slotEnd, 0.25, :date, 0, NOW(), NOW())
+             :slotStart, :slotEnd, 0.25, :date, 1, NOW(), NOW())
         `, {
           type: QueryTypes.INSERT,
           replacements: {
@@ -228,6 +229,7 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
         const slot = findFreeSlot(today);
         if (slot) {
           try {
+            // ✅ CORRIGÉ : synced_to_chronos = 1 pour les tâches aussi
             await db.query(`
               INSERT INTO time_entries
                 (ticket_id, user_id, client_id, ticket_type, group_name,
@@ -235,7 +237,7 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
                  created_at, updated_at)
               VALUES
                 (NULL, :userId, NULL, 'SAAS', :taskName,
-                 :slotStart, :slotEnd, :hours, :date, 0, NOW(), NOW())
+                 :slotStart, :slotEnd, :hours, :date, 1, NOW(), NOW())
             `, {
               type: QueryTypes.INSERT,
               replacements: {
@@ -299,7 +301,9 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
   }
 });
 
-// Chatbot IA — Local intelligent
+// ============================================================
+// CHATBOT IA
+// ============================================================
 app.post("/api/chat", async (req, res) => {
   try {
     const { messages } = req.body;
@@ -323,13 +327,15 @@ app.post("/api/chat", async (req, res) => {
     } else if (lastMessage.includes("user") || lastMessage.includes("equipe") || lastMessage.includes("équipe")) {
       reply = "👥 L'équipe SOC compte 10 membres : SOCUSER, Sabeur FRADJ, Khaled KSIBI, Wissem SAADLI, Ahmed SAMTI, Yassine BEN AMARA, Ghaith BASLY, Zeineb HAMMAMI, Zied MOKNI et Amir NAMOUCHI.";
     } else if (lastMessage.includes("résume") || lastMessage.includes("resume")) {
-      reply = "📋 **Résumé SOC Dashboard VERMEG :**\n• Total tickets : 1510 tickets réels Jira\n• Clients : 16 SaaS + 5 On-Prem\n• Équipe : 10 membres SOC\n• Client principal : STT (690 tickets)\n• Automatisation : n8n (minuit quotidien)";
+      reply = "📋 **Résumé SOC Dashboard VERMEG :**\n• Total tickets : 2710 (1510 SaaS + 1200 On-Prem)\n• Clients : 16 SaaS + 5 groupes On-Prem\n• Équipe : 10 membres SOC\n• Client principal : STT (690 tickets)\n• Automatisation : n8n (minuit quotidien)";
     } else if (lastMessage.includes("bonjour") || lastMessage.includes("hello") || lastMessage.includes("salut")) {
       reply = "👋 Bonjour ! Je suis l'assistant IA du SOC Dashboard VERMEG. Je peux vous aider à analyser vos tickets, clients, heures Chronos et anomalies.";
     } else if (lastMessage.includes("règle") || lastMessage.includes("regle")) {
       reply = "📏 **Règles métier SaaS :**\n• STT : max 20h/semaine\n• SMBC : max 15h/semaine\n• LGIM : max 10h/semaine\n• GEN : max 10h/semaine\n• Devops : max 8h/semaine";
+    } else if (lastMessage.includes("synchronis")) {
+      reply = "🔄 Le Smart Sync synchronise automatiquement les tickets Jira vers Chronos. Chaque ticket reçoit un slot horaire de 15 minutes entre 08:00 et 18:00, en respectant les règles métier par client.";
     } else {
-      reply = `🤖 Pour une analyse précise, essayez : "quel client a le plus de tickets", "anomalies détectées", "prédiction STT", ou "résume les données SOC".`;
+      reply = "🤖 Pour une analyse précise, essayez : \"quel client a le plus de tickets\", \"anomalies détectées\", \"prédiction STT\", ou \"résume les données SOC\".";
     }
 
     res.json({ reply });
