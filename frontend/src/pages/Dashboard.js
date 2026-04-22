@@ -11,6 +11,7 @@ const COLORS = ["#C8102E", "#1a1a2e", "#0f3460", "#e94560", "#16213e", "#28a745"
 const ONPREM_COLORS = ["#0f3460", "#1a1a2e", "#e94560", "#16213e", "#C8102E"];
 const CLIENT_COLORS = ["#C8102E", "#0f3460", "#28a745", "#ff9800", "#e94560", "#1a1a2e", "#6c757d"];
 const AI_API = "http://localhost:5001";
+const GROQ_API_KEY = process.env.REACT_APP_GROQ_API_KEY;
 const PAGE_SIZE = 20;
 
 const styles = {
@@ -71,7 +72,6 @@ const FLIP_CSS = `
   .flip-card:hover .flip-card-inner { transform: rotateY(180deg); }
   .flip-card-front, .flip-card-back { position: absolute; width: 100%; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px; box-sizing: border-box; box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
   .flip-card-back { transform: rotateY(180deg); }
-  .tab-btn-hover:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 `;
 
 function Pagination({ total, page, onPage }) {
@@ -122,8 +122,7 @@ function Gauge({ value, max, label }) {
   );
 }
 
-// Custom Donut label
-const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
+const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
   const RADIAN = Math.PI / 180;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
@@ -136,7 +135,6 @@ const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent,
   );
 };
 
-// Treemap custom content
 const TreemapContent = ({ x, y, width, height, name, value, index }) => {
   if (width < 40 || height < 30) return null;
   const colors = ["#C8102E", "#1a1a2e", "#0f3460", "#e94560", "#28a745", "#ff9800", "#16213e", "#6c757d"];
@@ -151,7 +149,6 @@ const TreemapContent = ({ x, y, width, height, name, value, index }) => {
 
 const ONPREM_GROUPS = ["GIS", "BDO", "CDO", "DO", "EIP"];
 
-// Client Retention AI Script
 function ClientRetentionAI({ tickets, hoursByClient, clientRules }) {
   const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -169,9 +166,7 @@ function ClientRetentionAI({ tickets, hoursByClient, clientRules }) {
       const results = Object.entries(byClient).map(([client, count]) => {
         const rule = clientRules.find(r => r.client === client);
         const usedPercent = rule ? (rule.used / rule.max) * 100 : 0;
-        let risk = "🟢 Faible";
-        let recommendation = "";
-        let action = "";
+        let risk, recommendation, action;
 
         if (count > 100 && usedPercent > 80) {
           risk = "🔴 Critique";
@@ -199,15 +194,11 @@ function ClientRetentionAI({ tickets, hoursByClient, clientRules }) {
     <div style={{ marginBottom: "25px" }}>
       <div style={styles.cardTitle}>🤝 Fidélisation Clients — Analyse IA</div>
       <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "20px", padding: "15px", background: "linear-gradient(135deg, #f8f9fa, #e8edf2)", borderRadius: "10px" }}>
-        <button onClick={generateInsights} disabled={loading}
-          style={{ ...styles.btn("#C8102E"), padding: "12px 28px" }}>
+        <button onClick={generateInsights} disabled={loading} style={{ ...styles.btn("#C8102E"), padding: "12px 28px" }}>
           {loading ? "⏳ Analyse en cours..." : "🤝 Analyser Fidélisation Clients"}
         </button>
-        <span style={{ color: "#666", fontSize: "13px" }}>
-          Analyse IA des risques de perte client et recommandations de fidélisation
-        </span>
+        <span style={{ color: "#666", fontSize: "13px" }}>Analyse IA des risques de perte client et recommandations de fidélisation</span>
       </div>
-
       {insights.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "15px" }}>
           {insights.map((insight, i) => (
@@ -224,17 +215,11 @@ function ClientRetentionAI({ tickets, hoursByClient, clientRules }) {
               <div style={{ display: "flex", gap: "15px", marginBottom: "10px" }}>
                 <span style={styles.badge("#1a1a2e")}>{insight.tickets} tickets</span>
                 {parseFloat(insight.usedPercent) > 0 && (
-                  <span style={styles.badge(parseFloat(insight.usedPercent) > 80 ? "#C8102E" : "#ff9800")}>
-                    {insight.usedPercent}% capacité
-                  </span>
+                  <span style={styles.badge(parseFloat(insight.usedPercent) > 80 ? "#C8102E" : "#ff9800")}>{insight.usedPercent}% capacité</span>
                 )}
               </div>
-              <div style={{ fontSize: "12px", color: "#555", marginBottom: "6px" }}>
-                📊 <strong>Analyse :</strong> {insight.recommendation}
-              </div>
-              <div style={{ fontSize: "12px", color: "#333", background: "white", padding: "8px", borderRadius: "6px" }}>
-                ✅ <strong>Action recommandée :</strong> {insight.action}
-              </div>
+              <div style={{ fontSize: "12px", color: "#555", marginBottom: "6px" }}>📊 <strong>Analyse :</strong> {insight.recommendation}</div>
+              <div style={{ fontSize: "12px", color: "#333", background: "white", padding: "8px", borderRadius: "6px" }}>✅ <strong>Action recommandée :</strong> {insight.action}</div>
             </div>
           ))}
         </div>
@@ -243,9 +228,12 @@ function ClientRetentionAI({ tickets, hoursByClient, clientRules }) {
   );
 }
 
+// ============================================================
+// CHATBOT RÉEL — Groq API (Llama 3.1)
+// ============================================================
 function Chatbot({ tickets, timeEntries, aiPredictions, aiAnomalies }) {
   const [messages, setMessages] = useState([
-    { role: "assistant", content: "👋 Bonjour ! Je suis l'assistant IA du SOC Dashboard VERMEG. Posez-moi des questions sur vos tickets, vos clients, vos heures ou vos anomalies !" }
+    { role: "assistant", content: "👋 Bonjour ! Je suis l'assistant IA du SOC Dashboard VERMEG, propulsé par Groq AI. Posez-moi des questions sur vos tickets, clients, heures ou anomalies !" }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -257,14 +245,28 @@ function Chatbot({ tickets, timeEntries, aiPredictions, aiAnomalies }) {
     const saasTickets = tickets.filter(t => t.ticket_type === "SAAS");
     const onPremTickets = tickets.filter(t => t.ticket_type === "ONPREM");
     const totalHeures = timeEntries.reduce((acc, e) => acc + parseFloat(e.hours_logged || 0), 0);
-    const byClient = saasTickets.reduce((acc, t) => { const name = t.client_name || "Unknown"; acc[name] = (acc[name] || 0) + 1; return acc; }, {});
-    return `Tu es l'assistant IA du SOC Dashboard de VERMEG Tunisie.
-DONNÉES : Total tickets: ${tickets.length} (SaaS: ${saasTickets.length}, On-Prem: ${onPremTickets.length})
-Heures: ${totalHeures.toFixed(2)}h
-Clients SaaS: ${Object.entries(byClient).map(([c, n]) => `${c}(${n})`).join(", ")}
-${aiPredictions ? `Prédiction: ${aiPredictions.total_tickets} tickets, ${aiPredictions.total_hours}h` : ""}
-${aiAnomalies ? `Anomalies: ${aiAnomalies.anomalies_count} sur ${aiAnomalies.total_analyzed} jours` : ""}
-Réponds en français, concis et professionnel avec des emojis.`;
+    const byClient = saasTickets.reduce((acc, t) => {
+      const name = t.client_name || "Unknown";
+      acc[name] = (acc[name] || 0) + 1;
+      return acc;
+    }, {});
+    return `Tu es l'assistant IA expert du SOC Dashboard de VERMEG Tunisie. Tu analyses les données en temps réel et fournis des insights précis et actionnables.
+
+DONNÉES EN TEMPS RÉEL :
+- Total tickets : ${tickets.length} (SaaS: ${saasTickets.length}, On-Prem: ${onPremTickets.length})
+- Heures Chronos totales : ${totalHeures.toFixed(2)}h
+- Clients SaaS actifs : ${Object.entries(byClient).sort((a,b)=>b[1]-a[1]).map(([c, n]) => `${c}(${n} tickets)`).join(", ")}
+${aiPredictions ? `- Prédiction IA semaine prochaine : ${aiPredictions.total_tickets} tickets, ${aiPredictions.total_hours}h` : ""}
+${aiAnomalies ? `- Anomalies détectées : ${aiAnomalies.anomalies_count} sur ${aiAnomalies.total_analyzed} jours analysés` : ""}
+
+CONTEXTE VERMEG :
+- Équipe SOC de 10 membres
+- Clients principaux : STT (dominant), SMBC, Devops, GEN, LGIM
+- Groupes On-Prem : GIS, BDO, CDO, DO, EIP (240 tickets chacun)
+- Smart Sync : synchronisation automatique Jira vers Chronos
+- Slots horaires : 08:00 à 18:00 (créneaux de 15 minutes = 0.25h)
+
+Réponds toujours en français, de manière concise et professionnelle avec des emojis pertinents. Fournis des analyses concrètes et des recommandations actionnables.`;
   };
 
   const sendMessage = async () => {
@@ -274,16 +276,31 @@ Réponds en français, concis et professionnel avec des emojis.`;
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/chat", {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ context: buildContext(), messages: [...messages.filter((m, i) => i > 0).map(m => ({ role: m.role, content: m.content })), { role: "user", content: userMsg }] })
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          max_tokens: 1000,
+          messages: [
+            { role: "system", content: buildContext() },
+            ...messages.filter((m, i) => i > 0).map(m => ({ role: m.role, content: m.content })),
+            { role: "user", content: userMsg }
+          ]
+        })
       });
       const data = await response.json();
-      setMessages(prev => [...prev, { role: "assistant", content: data.reply || "Désolé, je n'ai pas pu répondre." }]);
+      if (data.error) {
+        setMessages(prev => [...prev, { role: "assistant", content: `⚠️ Erreur API : ${data.error.message}` }]);
+      } else {
+        const reply = data.choices?.[0]?.message?.content || "Désolé, je n'ai pas pu répondre.";
+        setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+      }
     } catch (err) {
-      setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Erreur de connexion au serveur." }]);
+      setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Erreur de connexion à l'API Groq." }]);
     }
     setLoading(false);
   };
@@ -294,42 +311,75 @@ Réponds en français, concis et professionnel avec des emojis.`;
         <div style={{ fontSize: "24px" }}>🤖</div>
         <div>
           <div style={{ color: "white", fontWeight: "bold", fontSize: "15px" }}>Assistant IA — SOC Dashboard</div>
-          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: "12px" }}>Powered by AI</div>
+          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: "12px" }}>Powered by Groq AI (Llama 3.1)</div>
         </div>
         <div style={{ marginLeft: "auto", background: "#28a745", color: "white", padding: "4px 10px", borderRadius: "20px", fontSize: "11px" }}>● En ligne</div>
       </div>
-      <div style={{ height: "350px", overflowY: "auto", padding: "15px", background: "#f8f9fa" }}>
+      <div style={{ height: "400px", overflowY: "auto", padding: "15px", background: "#f8f9fa" }}>
         {messages.map((msg, i) => (
           <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: "12px" }}>
-            {msg.role === "assistant" && <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "center", marginRight: "8px", fontSize: "16px", flexShrink: 0 }}>🤖</div>}
-            <div style={{ maxWidth: "75%", padding: "10px 14px", borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px", background: msg.role === "user" ? "#C8102E" : "white", color: msg.role === "user" ? "white" : "#333", fontSize: "13px", lineHeight: "1.5", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+            {msg.role === "assistant" && (
+              <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "linear-gradient(135deg, #1a1a2e, #0f3460)", display: "flex", alignItems: "center", justifyContent: "center", marginRight: "8px", fontSize: "16px", flexShrink: 0 }}>🤖</div>
+            )}
+            <div style={{
+              maxWidth: "78%", padding: "10px 14px",
+              borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+              background: msg.role === "user" ? "linear-gradient(135deg, #C8102E, #a00c26)" : "white",
+              color: msg.role === "user" ? "white" : "#333",
+              fontSize: "13px", lineHeight: "1.6",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+              whiteSpace: "pre-wrap"
+            }}>
               {msg.content}
             </div>
-            {msg.role === "user" && <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#C8102E", display: "flex", alignItems: "center", justifyContent: "center", marginLeft: "8px", fontSize: "16px", flexShrink: 0 }}>👤</div>}
+            {msg.role === "user" && (
+              <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "linear-gradient(135deg, #C8102E, #a00c26)", display: "flex", alignItems: "center", justifyContent: "center", marginLeft: "8px", fontSize: "16px", flexShrink: 0 }}>👤</div>
+            )}
           </div>
         ))}
         {loading && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-            <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>🤖</div>
-            <div style={{ background: "white", padding: "10px 14px", borderRadius: "18px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
-              <div style={{ display: "flex", gap: "4px" }}>{[0,1,2].map(i => <div key={i} style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#C8102E" }} />)}</div>
+            <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "linear-gradient(135deg, #1a1a2e, #0f3460)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>🤖</div>
+            <div style={{ background: "white", padding: "12px 16px", borderRadius: "18px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+              <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+                {[0,1,2].map(i => (
+                  <div key={i} style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#C8102E" }} />
+                ))}
+                <span style={{ fontSize: "12px", color: "#666", marginLeft: "5px" }}>IA réfléchit...</span>
+              </div>
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
       <div style={{ padding: "8px 15px", background: "#f0f0f0", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-        {["Quel client a le plus de tickets ?", "Y a-t-il des anomalies ?", "Prédiction pour STT ?", "Résume les données"].map(q => (
-          <button key={q} onClick={() => setInput(q)} style={{ padding: "4px 10px", background: "white", border: "1px solid #C8102E", color: "#C8102E", borderRadius: "15px", fontSize: "11px", cursor: "pointer", fontWeight: "bold" }}>{q}</button>
+        {[
+          "Quel client a le plus de tickets ?",
+          "Analyse les anomalies détectées",
+          "Recommandations pour STT ?",
+          "Résume les performances SOC",
+          "Risques de surcharge cette semaine ?"
+        ].map(q => (
+          <button key={q} onClick={() => setInput(q)}
+            style={{ padding: "4px 10px", background: "white", border: "1px solid #C8102E", color: "#C8102E", borderRadius: "15px", fontSize: "11px", cursor: "pointer", fontWeight: "bold" }}>
+            {q}
+          </button>
         ))}
       </div>
       <div style={{ padding: "12px 15px", background: "white", display: "flex", gap: "10px", borderTop: "1px solid #f0f0f0" }}>
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === "Enter" && sendMessage()}
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyPress={e => e.key === "Enter" && sendMessage()}
           placeholder="Posez une question sur vos données SOC..."
           style={{ flex: 1, padding: "10px 15px", border: "2px solid #e0e0e0", borderRadius: "25px", fontSize: "13px", outline: "none" }}
-          onFocus={e => e.target.style.borderColor = "#C8102E"} onBlur={e => e.target.style.borderColor = "#e0e0e0"} />
+          onFocus={e => e.target.style.borderColor = "#C8102E"}
+          onBlur={e => e.target.style.borderColor = "#e0e0e0"}
+        />
         <button onClick={sendMessage} disabled={loading || !input.trim()}
-          style={{ background: loading || !input.trim() ? "#ccc" : "#C8102E", color: "white", border: "none", borderRadius: "50%", width: "42px", height: "42px", cursor: "pointer", fontSize: "18px" }}>➤</button>
+          style={{ background: loading || !input.trim() ? "#ccc" : "linear-gradient(135deg, #C8102E, #a00c26)", color: "white", border: "none", borderRadius: "50%", width: "44px", height: "44px", cursor: loading || !input.trim() ? "not-allowed" : "pointer", fontSize: "18px", boxShadow: "0 4px 12px rgba(200,16,46,0.3)" }}>
+          ➤
+        </button>
       </div>
     </div>
   );
@@ -388,7 +438,12 @@ function Dashboard() {
           if (!byClient[c]) byClient[c] = { client: c, jira_tickets: 0, jira_hours: 0, chronos_hours: 0 };
           byClient[c].chronos_hours += parseFloat(s.total_hours || 0);
         });
-        setComparison(Object.values(byClient).map(c => ({ ...c, ecart: (c.chronos_hours - c.jira_hours).toFixed(2), jira_hours: c.jira_hours.toFixed(2), chronos_hours: c.chronos_hours.toFixed(2) })));
+        setComparison(Object.values(byClient).map(c => ({
+          ...c,
+          ecart: (c.chronos_hours - c.jira_hours).toFixed(2),
+          jira_hours: c.jira_hours.toFixed(2),
+          chronos_hours: c.chronos_hours.toFixed(2)
+        })));
       });
     }).catch(console.error);
   }, []);
@@ -421,7 +476,10 @@ function Dashboard() {
     } catch { alert("Erreur lors de la suppression"); }
   };
 
-  const handleEditEntry = (entry) => { setEditEntry(entry); setEditForm({ hours_logged: entry.hours_logged, slot_start: entry.slot_start, slot_end: entry.slot_end, date: entry.date ? entry.date.toString().slice(0, 10) : "" }); };
+  const handleEditEntry = (entry) => {
+    setEditEntry(entry);
+    setEditForm({ hours_logged: entry.hours_logged, slot_start: entry.slot_start, slot_end: entry.slot_end, date: entry.date ? entry.date.toString().slice(0, 10) : "" });
+  };
 
   const handleUpdateEntry = async () => {
     try {
@@ -453,7 +511,6 @@ function Dashboard() {
   const onPremChartData = Object.entries(byGroup).map(([group, count]) => ({ group, tickets: count, heures: count * 0.25 }));
   const onPremPieData = Object.entries(byGroup).map(([group, count]) => ({ name: group, value: count }));
 
-  // Radar data for On-Prem groups
   const radarData = ONPREM_GROUPS.map(g => ({
     group: g,
     tickets: allOnPremTickets.filter(t => t.group_name === g).length,
@@ -475,11 +532,6 @@ function Dashboard() {
     return dates.map((date, i) => { const obj = { date }; aiForecast.forecast.forEach(c => { obj[c.client] = c.predictions[i]?.tickets || 0; }); return obj; });
   })() : [];
 
-  // Scatter data for anomalies
-  const scatterData = aiAnomalies ? [
-    ...aiAnomalies.anomalies.map(a => ({ x: parseFloat(a.ticket_count), y: parseFloat(a.total_hours), z: 80, type: "anomaly", label: a.client })),
-  ] : [];
-
   const clientRules = hoursByClient.filter(s => parseFloat(s.max_hours_per_week) > 0).map(s => ({ client: s.name || "Unknown", used: parseFloat(s.total_hours || 0), max: parseFloat(s.max_hours_per_week || 0) })).sort((a, b) => (b.used / b.max) - (a.used / a.max));
 
   const paginatedFilteredTickets = filteredTickets.slice((ticketPage - 1) * PAGE_SIZE, ticketPage * PAGE_SIZE);
@@ -498,7 +550,7 @@ function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <span style={{ color: "white", fontSize: "13px" }}>👤 {currentUser.full_name || "User"}</span>
           <button onClick={() => setShowChatbot(!showChatbot)}
-            style={{ background: showChatbot ? "#28a745" : "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.5)", padding: "8px 18px", borderRadius: "8px", cursor: "pointer", fontWeight: "bold", backdropFilter: "blur(4px)" }}>
+            style={{ background: showChatbot ? "#28a745" : "rgba(255,255,255,0.2)", color: "white", border: "1px solid rgba(255,255,255,0.5)", padding: "8px 18px", borderRadius: "8px", cursor: "pointer", fontWeight: "bold" }}>
             🤖 Assistant IA
           </button>
           <button onClick={handleLogout}
@@ -509,12 +561,14 @@ function Dashboard() {
       </nav>
 
       <div style={styles.container}>
-        {showChatbot && <div style={{ marginBottom: "25px" }}><Chatbot tickets={tickets} timeEntries={timeEntries} aiPredictions={aiPredictions} aiAnomalies={aiAnomalies} /></div>}
+        {showChatbot && (
+          <div style={{ marginBottom: "25px" }}>
+            <Chatbot tickets={tickets} timeEntries={timeEntries} aiPredictions={aiPredictions} aiAnomalies={aiAnomalies} />
+          </div>
+        )}
 
         {/* ===== FLIP KPI CARDS ===== */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "15px", marginBottom: "25px" }}>
-
-          {/* Card 1 — Total */}
           <div className="flip-card">
             <div className="flip-card-inner">
               <div className="flip-card-front" style={{ background: "linear-gradient(135deg, #C8102E, #a00c26)", color: "white" }}>
@@ -532,7 +586,6 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Card 2 — SaaS */}
           <div className="flip-card">
             <div className="flip-card-inner">
               <div className="flip-card-front" style={{ background: "linear-gradient(135deg, #1a1a2e, #0d0d1a)", color: "white" }}>
@@ -551,7 +604,6 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Card 3 — On-Prem */}
           <div className="flip-card">
             <div className="flip-card-inner">
               <div className="flip-card-front" style={{ background: "linear-gradient(135deg, #0f3460, #092540)", color: "white" }}>
@@ -569,7 +621,6 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Card 4 — Non Sync */}
           <div className="flip-card">
             <div className="flip-card-inner">
               <div className="flip-card-front" style={{ background: "linear-gradient(135deg, #ff9800, #cc7a00)", color: "white" }}>
@@ -589,7 +640,6 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Card 5 — Heures */}
           <div className="flip-card">
             <div className="flip-card-inner">
               <div className="flip-card-front" style={{ background: "linear-gradient(135deg, #28a745, #1e7e34)", color: "white" }}>
@@ -622,10 +672,8 @@ function Dashboard() {
           {/* ===== VUE GLOBALE ===== */}
           {activeTab === "global" && (
             <div>
-              {/* Smart Sync */}
               <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "25px", padding: "15px", background: "linear-gradient(135deg, #f8f9fa, #e8edf2)", borderRadius: "12px", border: "1px solid #e0e0e0" }}>
-                <button onClick={handleSmartSync} disabled={syncLoading}
-                  style={{ ...styles.btn(syncLoading ? "#ccc" : "#C8102E"), fontSize: "15px", padding: "12px 28px" }}>
+                <button onClick={handleSmartSync} disabled={syncLoading} style={{ ...styles.btn(syncLoading ? "#ccc" : "#C8102E"), fontSize: "15px", padding: "12px 28px" }}>
                   {syncLoading ? "⏳ Synchronisation..." : "🧠 Smart Sync"}
                 </button>
                 <div style={{ flex: 1 }}>
@@ -641,7 +689,6 @@ function Dashboard() {
                 </div>
               </div>
 
-              {/* Charts Grid */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "25px" }}>
                 <div>
                   <div style={styles.cardTitle}>📊 SaaS vs On-Prem — Tickets & Heures</div>
@@ -649,8 +696,7 @@ function Dashboard() {
                     <BarChart data={comparisonData} barGap={8}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" />
-                      <Tooltip contentStyle={{ borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }} />
-                      <Legend />
+                      <Tooltip contentStyle={{ borderRadius: "8px" }} /><Legend />
                       <Bar dataKey="tickets" fill="#C8102E" radius={[6,6,0,0]} name="Tickets" />
                       <Bar dataKey="heures" fill="#0f3460" radius={[6,6,0,0]} name="Heures" />
                     </BarChart>
@@ -664,14 +710,12 @@ function Dashboard() {
                         innerRadius={60} outerRadius={100} labelLine={false} label={renderDonutLabel}>
                         <Cell fill="#C8102E" /><Cell fill="#0f3460" />
                       </Pie>
-                      <Tooltip contentStyle={{ borderRadius: "8px" }} />
-                      <Legend />
+                      <Tooltip contentStyle={{ borderRadius: "8px" }} /><Legend />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Jauges par Membre */}
               <div style={styles.cardTitle}>👥 Heures par Membre de l'Équipe</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "15px", marginBottom: "25px" }}>
                 {hoursByUser.map(u => {
@@ -701,7 +745,6 @@ function Dashboard() {
                 })}
               </div>
 
-              {/* Area Chart */}
               <div style={styles.cardTitle}>📈 Évolution des Heures Chronos</div>
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={lineData}>
@@ -712,14 +755,12 @@ function Dashboard() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" stroke="#666" fontSize={11} />
-                  <YAxis stroke="#666" />
+                  <XAxis dataKey="date" stroke="#666" fontSize={11} /><YAxis stroke="#666" />
                   <Tooltip contentStyle={{ borderRadius: "8px" }} />
                   <Area type="monotone" dataKey="heures" stroke="#C8102E" strokeWidth={2.5} fill="url(#colorHeures)" dot={{ fill: "#C8102E", r: 3 }} name="Heures" />
                 </AreaChart>
               </ResponsiveContainer>
 
-              {/* Client Retention AI */}
               <div style={{ marginTop: "25px" }}>
                 <ClientRetentionAI tickets={tickets} hoursByClient={hoursByClient} clientRules={clientRules} />
               </div>
@@ -752,7 +793,6 @@ function Dashboard() {
                 </div>
               </div>
 
-              {/* Jauges par Client */}
               <div style={styles.cardTitle}>🎯 Heures utilisées vs Max autorisées — Par Client</div>
               {clientRules.filter(r => r.used >= r.max).length > 0 && (
                 <div style={{ background: "#fff0f0", border: "1px solid #C8102E", borderRadius: "10px", padding: "10px 15px", marginBottom: "15px", display: "flex", alignItems: "center", gap: "10px" }}>
@@ -776,7 +816,6 @@ function Dashboard() {
                 })}
               </div>
 
-              {/* Table SaaS */}
               <div style={styles.cardTitle}>🎫 Tickets SaaS ({saasTickets.length})</div>
               <table style={styles.table}>
                 <thead><tr><th style={styles.th}>Jira Key</th><th style={styles.th}>Résumé</th><th style={styles.th}>Client</th><th style={styles.th}>Date</th></tr></thead>
@@ -808,8 +847,7 @@ function Dashboard() {
                       <PolarRadiusAxis angle={90} domain={[0, Math.max(...radarData.map(d => d.tickets)) + 10]} tick={{ fontSize: 10 }} />
                       <Radar name="Tickets" dataKey="tickets" stroke="#C8102E" fill="#C8102E" fillOpacity={0.3} strokeWidth={2} />
                       <Radar name="Heures" dataKey="heures" stroke="#0f3460" fill="#0f3460" fillOpacity={0.2} strokeWidth={2} />
-                      <Legend />
-                      <Tooltip contentStyle={{ borderRadius: "8px" }} />
+                      <Legend /><Tooltip contentStyle={{ borderRadius: "8px" }} />
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
@@ -821,14 +859,12 @@ function Dashboard() {
                         innerRadius={70} outerRadius={110} labelLine={false} label={renderDonutLabel}>
                         {onPremPieData.map((_, i) => <Cell key={i} fill={ONPREM_COLORS[i % ONPREM_COLORS.length]} />)}
                       </Pie>
-                      <Tooltip contentStyle={{ borderRadius: "8px" }} />
-                      <Legend />
+                      <Tooltip contentStyle={{ borderRadius: "8px" }} /><Legend />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Jauges par Groupe */}
               <div style={styles.cardTitle}>🎯 Heures par Groupe (On-Prem)</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "15px", marginBottom: "25px" }}>
                 {ONPREM_GROUPS.map((group) => {
@@ -852,7 +888,6 @@ function Dashboard() {
                 })}
               </div>
 
-              {/* Table On-Prem */}
               <div style={styles.cardTitle}>🎫 Tickets On-Prem ({allOnPremTickets.length})</div>
               <table style={styles.table}>
                 <thead><tr><th style={styles.th}>Jira Key</th><th style={styles.th}>Résumé</th><th style={styles.th}>Groupe</th><th style={styles.th}>Assigné à</th><th style={styles.th}>Date</th></tr></thead>
@@ -976,12 +1011,11 @@ function Dashboard() {
                   { label: "🔮 Forecast 7 Jours", handler: handleForecast7Days, color: "#28a745" },
                   { label: "⏱️ Estimer par Type", handler: handleEstimateByType, color: "#6c757d" },
                 ].map(b => (
-                  <button key={b.label} onClick={b.handler} disabled={aiLoading}
-                    style={{ ...styles.btn(aiLoading ? "#ccc" : b.color), padding: "12px 24px", fontSize: "14px" }}>
+                  <button key={b.label} onClick={b.handler} disabled={aiLoading} style={{ ...styles.btn(aiLoading ? "#ccc" : b.color), padding: "12px 24px", fontSize: "14px" }}>
                     {aiLoading ? "⏳..." : b.label}
                   </button>
                 ))}
-                <button onClick={() => { setShowChatbot(true); setActiveTab("global"); }} style={{ ...styles.btn("#ff9800"), padding: "12px 24px", fontSize: "14px" }}>💬 Ouvrir Chatbot</button>
+                <button onClick={() => { setShowChatbot(true); setActiveTab("global"); }} style={{ ...styles.btn("#ff9800"), padding: "12px 24px", fontSize: "14px" }}>💬 Assistant IA</button>
               </div>
 
               {aiForecast && (
@@ -1008,7 +1042,7 @@ function Dashboard() {
                       <div style={{ fontSize: "12px", opacity: 0.9 }}>TICKETS PRÉVUS</div>
                       <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiPredictions.total_tickets}</div>
                     </div>
-                    <div style={{ background: "#1a1a2e", borderRadius: "12px", padding: "20px", textAlign: "center", color: "white", boxShadow: "0 8px 25px #1a1a2e44" }}>
+                    <div style={{ background: "#1a1a2e", borderRadius: "12px", padding: "20px", textAlign: "center", color: "white" }}>
                       <div style={{ fontSize: "12px", opacity: 0.9 }}>HEURES PRÉVUES</div>
                       <div style={{ fontSize: "36px", fontWeight: "bold" }}>{aiPredictions.total_hours}h</div>
                     </div>
@@ -1027,7 +1061,7 @@ function Dashboard() {
 
               {aiAnomalies && (
                 <div style={{ marginBottom: "25px" }}>
-                  <div style={styles.cardTitle}>🚨 Détection d'Anomalies — Scatter Plot</div>
+                  <div style={styles.cardTitle}>🚨 Détection d'Anomalies</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", marginBottom: "20px" }}>
                     <div style={{ background: "#1a1a2e", borderRadius: "12px", padding: "20px", textAlign: "center", color: "white" }}>
                       <div style={{ fontSize: "12px", opacity: 0.9 }}>JOURS ANALYSÉS</div>
@@ -1143,15 +1177,11 @@ function Dashboard() {
             <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
               <div style={{ background: "white", borderRadius: "16px", padding: "30px", width: "420px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
                 <div style={{ fontSize: "18px", fontWeight: "bold", color: "#1a1a2e", marginBottom: "20px", borderBottom: "3px solid #C8102E", paddingBottom: "10px" }}>✏️ Modifier l'entrée #{editEntry.id}</div>
-                {[
-                  { label: "Heures", type: "number", key: "hours_logged", step: "0.25" },
-                ].map(f => (
-                  <div key={f.key} style={{ marginBottom: "15px" }}>
-                    <label style={{ fontSize: "13px", fontWeight: "bold", color: "#666", display: "block", marginBottom: "5px" }}>{f.label}</label>
-                    <input type={f.type} step={f.step} value={editForm[f.key]} onChange={e => setEditForm({ ...editForm, [f.key]: e.target.value })}
-                      style={{ width: "100%", padding: "8px 12px", border: "2px solid #e0e0e0", borderRadius: "8px", fontSize: "14px", boxSizing: "border-box" }} />
-                  </div>
-                ))}
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: "bold", color: "#666", display: "block", marginBottom: "5px" }}>Heures</label>
+                  <input type="number" step="0.25" value={editForm.hours_logged} onChange={e => setEditForm({ ...editForm, hours_logged: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", border: "2px solid #e0e0e0", borderRadius: "8px", fontSize: "14px", boxSizing: "border-box" }} />
+                </div>
                 <div style={{ marginBottom: "15px" }}>
                   <label style={{ fontSize: "13px", fontWeight: "bold", color: "#666", display: "block", marginBottom: "5px" }}>Slot début</label>
                   <input type="time" value={editForm.slot_start?.slice(0,5)} onChange={e => setEditForm({ ...editForm, slot_start: e.target.value + ":00" })}
