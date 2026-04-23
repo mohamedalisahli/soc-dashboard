@@ -99,28 +99,48 @@ function Admin() {
     } catch (err) { console.error(err); }
   };
 
-  const loadTimeEntries = async () => {
-    try {
-      const params = {};
-      if (filterClient) params.client_id = filterClient;
-      if (filterUser) params.user_id = filterUser;
-      if (filterType) params.ticket_type = filterType;
-      if (filterDateFrom) params.date_from = filterDateFrom;
-      if (filterDateTo) params.date_to = filterDateTo;
-      const res = await API.get("/admin/time-entries", { params });
-      setTimeEntries(res.data);
-    } catch (err) { console.error(err); }
+  // ✅ CORRIGÉ — filtre time entries avec les valeurs courantes
+  const handleFilterTimeEntries = () => {
+    const params = {};
+    if (filterClient) params.client_id = filterClient;
+    if (filterUser) params.user_id = filterUser;
+    if (filterType) params.ticket_type = filterType;
+    if (filterDateFrom) params.date_from = filterDateFrom;
+    if (filterDateTo) params.date_to = filterDateTo;
+    API.get("/admin/time-entries", { params })
+      .then(res => setTimeEntries(res.data))
+      .catch(err => console.error(err));
   };
 
-  const loadTickets = async () => {
-    try {
-      const params = {};
-      if (filterClient) params.client_id = filterClient;
-      if (filterUser) params.user_id = filterUser;
-      if (filterType) params.ticket_type = filterType;
-      const res = await API.get("/admin/tickets", { params });
-      setTickets(res.data);
-    } catch (err) { console.error(err); }
+  // ✅ CORRIGÉ — filtre tickets avec les valeurs courantes
+  const handleFilterTickets = () => {
+    const params = {};
+    if (filterType) params.ticket_type = filterType;
+    if (filterUser) params.user_id = filterUser;
+    API.get("/admin/tickets", { params })
+      .then(res => setTickets(res.data))
+      .catch(err => console.error(err));
+  };
+
+  // ✅ CORRIGÉ — réinitialiser time entries
+  const handleResetTimeEntries = () => {
+    setFilterClient("");
+    setFilterUser("");
+    setFilterType("");
+    setFilterDateFrom("");
+    setFilterDateTo("");
+    API.get("/admin/time-entries")
+      .then(res => setTimeEntries(res.data))
+      .catch(err => console.error(err));
+  };
+
+  // ✅ CORRIGÉ — réinitialiser tickets
+  const handleResetTickets = () => {
+    setFilterType("");
+    setFilterUser("");
+    API.get("/admin/tickets")
+      .then(res => setTickets(res.data))
+      .catch(err => console.error(err));
   };
 
   const showMsg = (text, type = "success") => {
@@ -175,7 +195,6 @@ function Admin() {
   const globalRules = rules.filter(r => r.rule_type === "global" || !r.user_id);
   const perUserRules = rules.filter(r => r.rule_type === "per_user" && r.user_id);
 
-  // Chart data
   const saasTickets = tickets.filter(t => t.ticket_type === "SAAS").length;
   const onpremTickets = tickets.filter(t => t.ticket_type === "ONPREM").length;
   const totalHeures = timeEntries.reduce((acc, e) => acc + parseFloat(e.hours_logged || 0), 0);
@@ -237,9 +256,8 @@ function Admin() {
           </div>
         )}
 
-        {/* ===== FLIP KPI CARDS ===== */}
+        {/* FLIP KPI CARDS */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "15px", marginBottom: "25px" }}>
-
           <div className="flip-card">
             <div className="flip-card-inner">
               <div className="flip-card-front" style={{ background: "linear-gradient(135deg, #C8102E, #a00c26)", color: "white" }}>
@@ -327,7 +345,7 @@ function Admin() {
           </div>
         </div>
 
-        {/* ===== TABS ===== */}
+        {/* TABS */}
         <div style={{ marginBottom: "0", borderBottom: "2px solid #e0e0e0", display: "flex", flexWrap: "wrap" }}>
           {["dashboard", "rules", "timeentries", "tickets", "users", "stats"].map(tab => (
             <button key={tab} style={styles.tabBtn(activeTab === tab)} onClick={() => setActiveTab(tab)}>
@@ -338,7 +356,7 @@ function Admin() {
 
         <div style={{ background: "white", borderRadius: "0 12px 12px 12px", padding: "25px", marginBottom: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
 
-          {/* ===== DASHBOARD TAB ===== */}
+          {/* DASHBOARD TAB */}
           {activeTab === "dashboard" && (
             <div>
               <div style={{ background: "linear-gradient(135deg, #1a1a2e, #0f3460)", borderRadius: "12px", padding: "20px", marginBottom: "25px", color: "white", textAlign: "center" }}>
@@ -347,7 +365,6 @@ function Admin() {
                 <div style={{ fontSize: "13px", opacity: 0.8, marginTop: "6px" }}>Supervision globale de l'équipe, des tickets et des performances</div>
               </div>
 
-              {/* Charts Row 1 */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
                 <div>
                   <div style={styles.cardTitle}>📊 Tickets SaaS vs On-Prem</div>
@@ -383,7 +400,6 @@ function Admin() {
                 </div>
               </div>
 
-              {/* Charts Row 2 */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
                 <div>
                   <div style={styles.cardTitle}>👥 Heures par Membre de l'Équipe</div>
@@ -415,7 +431,6 @@ function Admin() {
                 </div>
               </div>
 
-              {/* Chart Row 3 — Heures par client */}
               <div style={styles.cardTitle}>🎯 Heures Utilisées vs Max Autorisées — Par Client</div>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={hoursByClientData}>
@@ -429,7 +444,6 @@ function Admin() {
                 </BarChart>
               </ResponsiveContainer>
 
-              {/* Alertes dépassement */}
               {stats?.exceedingClients?.length > 0 && (
                 <div style={{ background: "#fff5f5", border: "2px solid #C8102E", borderRadius: "12px", padding: "15px", marginTop: "20px" }}>
                   <div style={{ color: "#C8102E", fontWeight: "bold", marginBottom: "10px", fontSize: "15px" }}>⚠️ Clients ayant dépassé la limite d'heures :</div>
@@ -443,7 +457,6 @@ function Admin() {
                 </div>
               )}
 
-              {/* Jauges par user */}
               <div style={{ ...styles.cardTitle, marginTop: "25px" }}>👥 Jauges Heures — Membres de l'Équipe</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "15px" }}>
                 {stats?.byUser?.map(u => {
@@ -481,7 +494,7 @@ function Admin() {
             </div>
           )}
 
-          {/* ===== RULES TAB ===== */}
+          {/* RULES TAB */}
           {activeTab === "rules" && (
             <div>
               <div style={styles.cardTitle}>⚙️ Règles Globales — Max Heures par Client</div>
@@ -584,7 +597,7 @@ function Admin() {
             </div>
           )}
 
-          {/* ===== TIME ENTRIES TAB ===== */}
+          {/* TIME ENTRIES TAB */}
           {activeTab === "timeentries" && (
             <div>
               <div style={styles.cardTitle}>🕐 Toutes les Entrées de Temps ({timeEntries.length})</div>
@@ -606,9 +619,9 @@ function Admin() {
                 </select>
                 <input type="date" style={styles.filterSelect} value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} />
                 <input type="date" style={styles.filterSelect} value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
-                <button onClick={loadTimeEntries} style={{ ...styles.btnModify, background: "#C8102E" }}>🔍 Filtrer</button>
-                <button onClick={() => { setFilterClient(""); setFilterUser(""); setFilterType(""); setFilterDateFrom(""); setFilterDateTo(""); setTimeout(loadTimeEntries, 100); }}
-                  style={{ ...styles.btnModify, background: "#666" }}>Réinitialiser</button>
+                {/* ✅ CORRIGÉ */}
+                <button onClick={handleFilterTimeEntries} style={{ ...styles.btnModify, background: "#C8102E" }}>🔍 Filtrer</button>
+                <button onClick={handleResetTimeEntries} style={{ ...styles.btnModify, background: "#666" }}>Réinitialiser</button>
               </div>
               <div style={{ maxHeight: "500px", overflowY: "auto" }}>
                 <table style={styles.table}>
@@ -651,7 +664,7 @@ function Admin() {
             </div>
           )}
 
-          {/* ===== TICKETS TAB ===== */}
+          {/* TICKETS TAB */}
           {activeTab === "tickets" && (
             <div>
               <div style={styles.cardTitle}>🎫 Tous les Tickets ({tickets.length})</div>
@@ -665,9 +678,9 @@ function Admin() {
                   <option value="">Tous les users</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
                 </select>
-                <button onClick={loadTickets} style={{ ...styles.btnModify, background: "#C8102E" }}>🔍 Filtrer</button>
-                <button onClick={() => { setFilterType(""); setFilterUser(""); setTimeout(loadTickets, 100); }}
-                  style={{ ...styles.btnModify, background: "#666" }}>Réinitialiser</button>
+                {/* ✅ CORRIGÉ */}
+                <button onClick={handleFilterTickets} style={{ ...styles.btnModify, background: "#C8102E" }}>🔍 Filtrer</button>
+                <button onClick={handleResetTickets} style={{ ...styles.btnModify, background: "#666" }}>Réinitialiser</button>
               </div>
               <div style={{ maxHeight: "500px", overflowY: "auto" }}>
                 <table style={styles.table}>
@@ -698,7 +711,7 @@ function Admin() {
             </div>
           )}
 
-          {/* ===== USERS TAB ===== */}
+          {/* USERS TAB */}
           {activeTab === "users" && (
             <div>
               <div style={styles.cardTitle}>👥 Membres de l'équipe SOC ({users.length})</div>
@@ -729,7 +742,7 @@ function Admin() {
             </div>
           )}
 
-          {/* ===== STATS TAB ===== */}
+          {/* STATS TAB */}
           {activeTab === "stats" && stats && (
             <div>
               <div style={styles.cardTitle}>📈 Statistiques — Heures par Client et par User</div>
