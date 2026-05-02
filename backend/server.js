@@ -178,7 +178,6 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
       }
 
       try {
-        // ✅ CORRIGÉ : synced_to_chronos = 1 (au lieu de 0)
         await db.query(`
           INSERT INTO time_entries
             (ticket_id, user_id, client_id, ticket_type, group_name,
@@ -215,7 +214,10 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
       }
     }
 
+    // ============================================================
     // 7. Tâches par défaut avec le temps restant
+    // ✅ CORRIGÉ : récupération du client_id depuis la table clients
+    // ============================================================
     const totalInsertedHours = inserted * 0.25;
     const capaciteJournaliere = 8;
     const tempsRestant = Math.max(0, capaciteJournaliere - totalInsertedHours);
@@ -229,19 +231,26 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
         const slot = findFreeSlot(today);
         if (slot) {
           try {
-            // ✅ CORRIGÉ : synced_to_chronos = 1 pour les tâches aussi
+            // ✅ CORRIGÉ : récupérer le vrai client_id depuis la table clients
+            const [clientRow] = await db.query(
+              `SELECT id FROM clients WHERE name = :name LIMIT 1`,
+              { type: QueryTypes.SELECT, replacements: { name: task } }
+            );
+            const clientId = clientRow ? clientRow.id : null;
+
             await db.query(`
               INSERT INTO time_entries
                 (ticket_id, user_id, client_id, ticket_type, group_name,
                  slot_start, slot_end, hours_logged, date, synced_to_chronos,
                  created_at, updated_at)
               VALUES
-                (NULL, :userId, NULL, 'SAAS', :taskName,
+                (NULL, :userId, :clientId, 'SAAS', :taskName,
                  :slotStart, :slotEnd, :hours, :date, 1, NOW(), NOW())
             `, {
               type: QueryTypes.INSERT,
               replacements: {
                 userId: req.user.id,
+                clientId: clientId,
                 taskName: task,
                 slotStart: slot.start,
                 slotEnd: slot.end,
@@ -249,14 +258,27 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
                 date: today
               }
             });
-            logs.push(`📌 Tâche : ${task} → ${heuresParTache}h`);
-          } catch (e) { /* ignore */ }
+
+            // ✅ Mettre à jour usedHoursMap pour les tâches par défaut aussi
+            if (!usedHoursMap[task]) usedHoursMap[task] = 0;
+            usedHoursMap[task] += heuresParTache;
+
+            logs.push(`📌 Tâche par défaut : ${task} → ${heuresParTache}h le ${today}`);
+          } catch (e) {
+            logs.push(`❌ Tâche ${task} — Erreur : ${e.message}`);
+          }
+        } else {
+          logs.push(`⚠️ Tâche ${task} ignorée — Aucun slot disponible le ${today}`);
         }
       }
       logs.push(`⏱️ Temps restant ${tempsRestant.toFixed(2)}h → 3 tâches (${heuresParTache}h chacune)`);
+    } else {
+      logs.push(`ℹ️ Aucun temps restant — tâches par défaut non insérées`);
     }
 
+    // ============================================================
     // 8. Vérification double — alertes dépassement
+    // ============================================================
     const clientsDepasses = [];
 
     for (const [clientName, usedH] of Object.entries(usedHoursMap)) {
@@ -334,6 +356,8 @@ app.post("/api/chat", async (req, res) => {
       reply = "📏 **Règles métier SaaS :**\n• STT : max 20h/semaine\n• SMBC : max 15h/semaine\n• LGIM : max 10h/semaine\n• GEN : max 10h/semaine\n• Devops : max 8h/semaine";
     } else if (lastMessage.includes("synchronis")) {
       reply = "🔄 Le Smart Sync synchronise automatiquement les tickets Jira vers Chronos. Chaque ticket reçoit un slot horaire de 15 minutes entre 08:00 et 18:00, en respectant les règles métier par client.";
+    } else if (lastMessage.includes("tâche") || lastMessage.includes("monitoring")) {
+      reply = "📌 Après synchronisation des tickets, 3 tâches par défaut sont insérées avec le temps restant : col_soc_monitoring, ins_soc_monitoring et int_soc_monitoring. Ces tâches créent l'écart réel entre Jira et Chronos.";
     } else {
       reply = "🤖 Pour une analyse précise, essayez : \"quel client a le plus de tickets\", \"anomalies détectées\", \"prédiction STT\", ou \"résume les données SOC\".";
     }
@@ -344,12 +368,16 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// Cron job — Smart Sync automatique chaque nuit
+// ============================================================
+// Cron job — Smart Sync automatique chaque nuit à 02:00
+// ============================================================
 cron.schedule("0 2 * * *", () => {
   console.log("🔄 Running daily Smart Sync job...");
 });
 
+// ============================================================
 // Start server
+// ============================================================
 const PORT = process.env.PORT || 5000;
 sequelize.authenticate()
   .then(() => {
