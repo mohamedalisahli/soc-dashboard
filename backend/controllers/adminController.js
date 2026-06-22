@@ -89,13 +89,15 @@ const getHoursStats = async (req, res) => {
     `, { type: QueryTypes.SELECT });
 
     const byUser = await sequelize.query(`
-      SELECT u.username, u.full_name,
-        COUNT(te.id) as total_tickets,
-        SUM(te.hours_logged) as total_hours
-      FROM time_entries te
-      JOIN users u ON te.user_id = u.id
-      GROUP BY te.user_id, u.username, u.full_name
-    `, { type: QueryTypes.SELECT });
+  SELECT u.id as user_id, u.username, u.full_name,
+    COUNT(te.id) as total_tickets,
+    SUM(te.hours_logged) as total_hours,
+    SUM(CASE WHEN te.ticket_type = 'SAAS' THEN te.hours_logged ELSE 0 END) as saas_hours,
+    SUM(CASE WHEN te.ticket_type = 'ONPREM' THEN te.hours_logged ELSE 0 END) as onprem_hours
+  FROM time_entries te
+  JOIN users u ON te.user_id = u.id
+  GROUP BY te.user_id, u.username, u.full_name
+`, { type: QueryTypes.SELECT });
 
     const exceedingClients = byClient.filter(s =>
       s.max_hours_per_week > 0 && parseFloat(s.total_hours) > parseFloat(s.max_hours_per_week)
