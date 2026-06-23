@@ -38,7 +38,6 @@ app.get("/api/health", (req, res) => {
 // DATE DE CLÔTURE — Admin
 // ============================================================
 
-// Récupérer la date de clôture
 app.get("/api/admin/cloture-date", verifyToken, async (req, res) => {
   try {
     const db = require("./config/database");
@@ -57,22 +56,16 @@ app.get("/api/admin/cloture-date", verifyToken, async (req, res) => {
   }
 });
 
-// Enregistrer la date de clôture
 app.post("/api/admin/cloture-date", verifyToken, async (req, res) => {
   try {
-    const { cloture_date } = req.body;
     const db = require("./config/database");
-    
+    const cloture_date = (req.body && req.body.cloture_date) ? req.body.cloture_date : null;
     await db.query(
-      `INSERT INTO settings (\`key\`, value) 
-       VALUES ('cloture_date', :clotureDate) 
+      `INSERT INTO settings (\`key\`, value)
+       VALUES ('cloture_date', :clotureDate)
        ON DUPLICATE KEY UPDATE value = :clotureDate`,
-      {
-        type: QueryTypes.INSERT,
-        replacements: { clotureDate: cloture_date }
-      }
+      { type: QueryTypes.INSERT, replacements: { clotureDate: cloture_date } }
     );
-    
     res.json({ success: true, cloture_date });
   } catch (err) {
     console.error("Erreur enregistrement date de clôture:", err.message);
@@ -80,7 +73,6 @@ app.post("/api/admin/cloture-date", verifyToken, async (req, res) => {
   }
 });
 
-// Supprimer la date de clôture
 app.delete("/api/admin/cloture-date", verifyToken, async (req, res) => {
   try {
     const db = require("./config/database");
@@ -104,8 +96,9 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
     const startTime = Date.now();
     const logs = [];
 
-    // Récupérer la date de clôture depuis le body
-    const { cloture_date } = req.body;
+    // Protection contre body undefined (appel depuis n8n sans Content-Type)
+    if (!req.body) req.body = {};
+    const cloture_date = (req.body && req.body.cloture_date) ? req.body.cloture_date : null;
 
     let ticketsQuery = `
       SELECT t.*, c.name as client_name, c.max_hours_per_week
@@ -118,7 +111,6 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
         )
     `;
 
-    // Ajouter le filtre de date de clôture
     if (cloture_date) {
       ticketsQuery += ` AND t.outage_start <= :clotureDate`;
     }
@@ -252,7 +244,6 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
       }
 
       try {
-        // 1. Insérer la time_entry
         await db.query(`
           INSERT INTO time_entries
             (ticket_id, user_id, client_id, ticket_type, group_name,
@@ -275,7 +266,6 @@ app.post("/api/smart-sync", verifyToken, async (req, res) => {
           }
         });
 
-        // 2. ✅ Marquer le ticket comme synchronisé
         await db.query(`
           UPDATE tickets SET synced_to_chronos = 1, updated_at = NOW()
           WHERE id = :ticketId
@@ -403,7 +393,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     const { messages } = req.body;
     const db = require("./config/database");
 
-    // 1. Statistiques globales tickets
     const [ticketStats] = await db.query(`
       SELECT
         (SELECT COUNT(*) FROM tickets) as total_tickets,
@@ -415,7 +404,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     .catch(() => [{ total_tickets: 0, saas_tickets: 0, onprem_tickets: 0,
                     unsynced_tickets: 0, synced_tickets: 0 }]);
 
-    // 2. Top clients par nombre de tickets
     const topClients = await db.query(`
       SELECT c.name, COUNT(t.id) as count,
              ROUND(COUNT(t.id) * 0.25, 2) as jira_hours
@@ -428,7 +416,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => []);
 
-    // 3. Heures totales Chronos
     const [hoursStats] = await db.query(`
       SELECT
         SUM(hours_logged) as total_hours,
@@ -438,7 +425,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => [{ total_hours: 0, saas_hours: 0, onprem_hours: 0 }]);
 
-    // 4. Heures Jira estimées
     const [jiraHoursStats] = await db.query(`
       SELECT
         COUNT(*) * 0.25 as total_jira_hours,
@@ -448,13 +434,11 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => [{ total_jira_hours: 0, saas_jira_hours: 0, onprem_jira_hours: 0 }]);
 
-    // 5. Tickets ignorés
     const [skippedStats] = await db.query(`
       SELECT COUNT(*) as total_skipped FROM skipped_tickets
     `, { type: QueryTypes.SELECT })
     .catch(() => [{ total_skipped: 0 }]);
 
-    // 6. Clients ayant dépassé leur limite
     const clientsDepasses = await db.query(`
       SELECT c.name, r.max_hours,
              ROUND(SUM(te.hours_logged), 2) as used_hours,
@@ -469,7 +453,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => []);
 
-    // 7. Clients proches de leur limite
     const clientsProches = await db.query(`
       SELECT c.name, r.max_hours,
              ROUND(SUM(te.hours_logged), 2) as used_hours,
@@ -484,25 +467,17 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => []);
 
-    // 8. Statistiques par membre SOC
     const memberStats = await db.query(`
-  SELECT u.full_name,
-    (SELECT COUNT(*) FROM tickets
-     WHERE assignee_id = u.id) as total_tickets,
-    ROUND(COALESCE((SELECT SUM(hours_logged)
-     FROM time_entries WHERE user_id = u.id), 0), 2) as total_hours,
-    ROUND(COALESCE((SELECT SUM(hours_logged)
-     FROM time_entries WHERE user_id = u.id
-     AND ticket_type = 'SAAS'), 0), 2) as saas_hours,
-    ROUND(COALESCE((SELECT SUM(hours_logged)
-     FROM time_entries WHERE user_id = u.id
-     AND ticket_type = 'ONPREM'), 0), 2) as onprem_hours
-  FROM users u
-  ORDER BY total_hours DESC
-`, { type: QueryTypes.SELECT })
-.catch(() => []);
+      SELECT u.full_name,
+        (SELECT COUNT(*) FROM tickets WHERE assignee_id = u.id) as total_tickets,
+        ROUND(COALESCE((SELECT SUM(hours_logged) FROM time_entries WHERE user_id = u.id), 0), 2) as total_hours,
+        ROUND(COALESCE((SELECT SUM(hours_logged) FROM time_entries WHERE user_id = u.id AND ticket_type = 'SAAS'), 0), 2) as saas_hours,
+        ROUND(COALESCE((SELECT SUM(hours_logged) FROM time_entries WHERE user_id = u.id AND ticket_type = 'ONPREM'), 0), 2) as onprem_hours
+      FROM users u
+      ORDER BY total_hours DESC
+    `, { type: QueryTypes.SELECT })
+    .catch(() => []);
 
-    // 9. Groupes On-Prem
     const onpremGroups = await db.query(`
       SELECT group_name, COUNT(*) as tickets,
              ROUND(COUNT(*) * 0.25, 2) as heures
@@ -513,7 +488,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => []);
 
-    // 10. Activité par jour de la semaine
     const activityByDay = await db.query(`
       SELECT DAYNAME(date) as jour,
              COUNT(*) as entrees,
@@ -525,7 +499,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => []);
 
-    // 11. Heure la plus active
     const activityByHour = await db.query(`
       SELECT SUBSTRING(slot_start, 1, 2) as heure,
              COUNT(*) as entrees
@@ -537,7 +510,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => []);
 
-    // 12. Règles contractuelles
     const rules = await db.query(`
       SELECT c.name, r.max_hours, r.rule_type
       FROM rules r
@@ -546,7 +518,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
     `, { type: QueryTypes.SELECT })
     .catch(() => []);
 
-    // 13. Calculs finaux
     const totalJiraHours = parseFloat(jiraHoursStats.total_jira_hours || 0);
     const totalChronosHours = parseFloat(hoursStats.total_hours || 0);
     const ratio = totalJiraHours > 0
@@ -557,7 +528,6 @@ app.post("/api/chat", verifyToken, async (req, res) => {
       ? ((ticketStats.synced_tickets / ticketStats.total_tickets) * 100).toFixed(0)
       : "0";
 
-    // 14. System prompt enrichi
     const systemPrompt = `Tu es l'assistant IA expert du SOC Dashboard VERMEG Tunisie.
 Réponds UNIQUEMENT en te basant sur ces données réelles et à jour. Ne jamais inventer.
 Réponds en français, de manière concise et précise (3-5 phrases maximum).
@@ -585,43 +555,35 @@ Réponds en français, de manière concise et précise (3-5 phrases maximum).
 - Écart total Chronos - Jira : ${ecartTotal}h
 - Ratio Chronos / Jira : ${ratio}
 - Explication : l'écart vient des 3 tâches monitoring
-  (Collecte SOC, Inspection SOC, Intégration SOC)
+  (Colateral SOC, Insurance SOC, Internal SOC)
   ajoutées automatiquement par le Smart Sync
 
 ═══════════════════════════════════════
 🏆 TOP CLIENTS SAAS
 ═══════════════════════════════════════
 ${topClients.length > 0
-  ? topClients.map((c, i) =>
-    `${i + 1}. ${c.name} : ${c.count} tickets (${c.jira_hours}h Jira)`
-  ).join("\n")
+  ? topClients.map((c, i) => `${i + 1}. ${c.name} : ${c.count} tickets (${c.jira_hours}h Jira)`).join("\n")
   : "Aucune donnée disponible"}
 
 ═══════════════════════════════════════
 🖥️ GROUPES ON-PREM
 ═══════════════════════════════════════
 ${onpremGroups.length > 0
-  ? onpremGroups.map(g =>
-    `- ${g.group_name} : ${g.tickets} tickets (${g.heures}h)`
-  ).join("\n")
+  ? onpremGroups.map(g => `- ${g.group_name} : ${g.tickets} tickets (${g.heures}h)`).join("\n")
   : "Aucune donnée disponible"}
 
 ═══════════════════════════════════════
 ⚠️ CLIENTS DÉPASSANT LEUR LIMITE
 ═══════════════════════════════════════
 ${clientsDepasses.length > 0
-  ? clientsDepasses.map(c =>
-    `🔴 ${c.name} : ${c.used_hours}h / ${c.max_hours}h max (+${c.depassement}h)`
-  ).join("\n")
+  ? clientsDepasses.map(c => `🔴 ${c.name} : ${c.used_hours}h / ${c.max_hours}h max (+${c.depassement}h)`).join("\n")
   : "✅ Aucun client ne dépasse sa limite"}
 
 ═══════════════════════════════════════
 🟡 CLIENTS PROCHES DE LEUR LIMITE (70-99%)
 ═══════════════════════════════════════
 ${clientsProches.length > 0
-  ? clientsProches.map(c =>
-    `🟡 ${c.name} : ${c.used_hours}h / ${c.max_hours}h (${c.pct}%)`
-  ).join("\n")
+  ? clientsProches.map(c => `🟡 ${c.name} : ${c.used_hours}h / ${c.max_hours}h (${c.pct}%)`).join("\n")
   : "✅ Aucun client en zone de risque"}
 
 ═══════════════════════════════════════
@@ -636,23 +598,17 @@ ${rules.length > 0
 ═══════════════════════════════════════
 ${memberStats.length > 0
   ? memberStats.map(u =>
-    `- ${u.full_name} : ${u.total_hours}h total ` +
-    `(SaaS: ${u.saas_hours}h, OnPrem: ${u.onprem_hours}h, ` +
-    `${u.total_tickets} tickets)`
-  ).join("\n")
+      `- ${u.full_name} : ${u.total_hours}h total (SaaS: ${u.saas_hours}h, OnPrem: ${u.onprem_hours}h, ${u.total_tickets} tickets)`
+    ).join("\n")
   : "Aucune donnée disponible"}
 
 ═══════════════════════════════════════
 📅 ACTIVITÉ PAR JOUR
 ═══════════════════════════════════════
 ${activityByDay.length > 0
-  ? activityByDay.map(d =>
-    `- ${d.jour} : ${d.entrees} entrées (${d.heures}h)`
-  ).join("\n")
+  ? activityByDay.map(d => `- ${d.jour} : ${d.entrees} entrées (${d.heures}h)`).join("\n")
   : "Aucune donnée disponible"}
-${activityByHour.length > 0
-  ? `- Heure la plus active : ${activityByHour[0].heure}h00`
-  : ""}
+${activityByHour.length > 0 ? `- Heure la plus active : ${activityByHour[0].heure}h00` : ""}
 
 ═══════════════════════════════════════
 🤖 INTELLIGENCE ARTIFICIELLE
@@ -678,7 +634,6 @@ ${activityByHour.length > 0
 - Automatisation : n8n (minuit)
 - Reporting : Power BI (6 pages ODBC)`;
 
-    // 15. Appel Groq AI
     const completion = await groq.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
